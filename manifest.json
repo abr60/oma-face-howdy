@@ -6,10 +6,10 @@
   "author": "abr60",
   "description": "Howdy face-recognition unlock for sudo, login, and the lock screen, with an Omarchy-native setup wizard.",
   "kinds": [
-    "service"
+    "overlay"
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "service": "Service.qml"
+    "overlay": "Service.qml"
   }
 }

@@ -7,7 +7,7 @@ import qs.Ui
 
 // face.howdy — the Omarchy-native Howdy face-unlock wizard.
 //
-// A "service" kind plugin: a menu-launched window (not a bar widget) that
+// An "overlay" kind plugin: a menu-launched window (not a bar widget) that
 // walks the user through installing Howdy + the IR emitter, deploying the PAM
 // integration and lock-screen patch, enrolling their face, testing, and
 // cleaningly removing the whole thing.
