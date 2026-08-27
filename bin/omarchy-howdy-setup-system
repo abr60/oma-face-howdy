@@ -312,6 +312,18 @@ EOF
 }
 
 # --------------------------------------------------------------------------
+# Refresh the world-readable enrollment marker for the unprivileged GUI.
+# /etc/howdy/models is root-only, so keep a tiny yes/no at
+# /etc/omarchy/face-howdy/enrolled that omarchy-howdy-status can read.
+# Delegate to the shared helper so enroll/clear see the same logic.
+# --------------------------------------------------------------------------
+write_status_state() {
+  local helper
+  helper="$(dirname "$0")/omarchy-howdy-refresh-state"
+  [[ -x "$helper" ]] && "$helper" || true
+}
+
+# --------------------------------------------------------------------------
 case "$PHASE" in
   packages) phase_packages ;;
   ir)       phase_ir ;;
@@ -328,3 +340,5 @@ case "$PHASE" in
     exit 64
     ;;
 esac
+
+write_status_state

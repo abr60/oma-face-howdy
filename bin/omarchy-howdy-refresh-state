@@ -1,0 +1,24 @@
+#!/bin/bash
+#
+# face.howdy:refresh-state — refresh the world-readable enrollment marker.
+#
+# Root privileged. Enrollment lives under root-only /etc/howdy/models; this
+# writes a tiny yes/no to /etc/omarchy/face-howdy/enrolled so the unprivileged
+# GUI can render an accurate "Face enrolled" status without a password prompt.
+# Called by the wizard after install/deploy, face enroll, and face clear.
+#
+#   refresh-state        recalc + write /etc/omarchy/face-howdy/enrolled
+
+set -euo pipefail
+
+dir="/etc/omarchy/face-howdy"
+state="no"
+
+install -d -m 0755 "$dir"
+if compgen -G "/etc/howdy/models/*.dat" >/dev/null 2>&1; then
+  state="yes"
+fi
+printf '%s\n' "$state" > "$dir/enrolled"
+chmod 0644 "$dir/enrolled"
+
+exit 0

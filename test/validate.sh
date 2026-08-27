@@ -49,7 +49,7 @@ EP=$(jq -r '.entryPoints.service // ""' "$MANIFEST")
 for bin in omarchy-howdy-setup-system omarchy-howdy-teardown-system \
            omarchy-howdy-deploy-lock omarchy-howdy-restore-lock \
            omarchy-howdy-status omarchy-howdy-menu-install \
-           omarchy-howdy-menu-entry; do
+           omarchy-howdy-menu-entry omarchy-howdy-refresh-state; do
   [[ -f "$PLUGIN_DIR/bin/$bin" ]] || fail "missing bundled script bin/$bin"
   [[ -x "$PLUGIN_DIR/bin/$bin" ]] || fail "bin/$bin is not executable"
 done

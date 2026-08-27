@@ -12,11 +12,44 @@ pam_howdy()   { grep -q "pam_howdy" /etc/pam.d/sudo 2>/dev/null && echo yes || e
 lock_pam()    { [[ -f /etc/pam.d/omarchy-lock-howdy ]] && echo yes || echo no; }
 udev_rule()   { [[ -f /etc/udev/rules.d/99-howdy-ir-emitter.rules ]] && echo yes || echo no; }
 models()      { ls /usr/share/howdy/models/*.onnx &>/dev/null 2>&1 && echo yes || echo no; }
-enrolled()    { ls /etc/howdy/models/*.dat &>/dev/null 2>&1 && echo yes || echo no; }
+
+# Face enrollment lives under root-only /etc/howdy/models. The privileged
+# setup/teardown scripts keep a small world-readable marker at
+# /etc/omarchy/face-howdy/enrolled so the unprivileged GUI can report it
+# without prompting for a password. Fall back to a best-effort sudo -n that
+# never blocks; if we truly can't tell, report "no".
+enrolled() {
+  local marker="/etc/omarchy/face-howdy/enrolled"
+  if [[ -r "$marker" ]]; then
+    grep -qx "yes" "$marker" 2>/dev/null && echo yes || echo no
+    return
+  fi
+  if sudo -n ls /etc/howdy/models/*.dat &>/dev/null 2>&1; then echo yes; else echo no; fi
+}
+
+# The active lock screen is whichever non-stock lock clone is enabled in the
+# user's shell.json plugins array (stock omarchy.lock is disabled alongside).
 lock_active() {
+  local shelljson="$HOME/.config/omarchy/shell.json"
   local id
-  id="$HOME/.local/state/face.howdy/active-lock-id"
-  [[ -f "$id" ]] && cat "$id" || echo "stock"
+  if [[ -r "$shelljson" ]]; then
+    id=$(python3 - "$shelljson" <<'PY' 2>/dev/null || true
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    for p in d.get("plugins",[]):
+        pid=p.get("id","") if isinstance(p,dict) else str(p)
+        if pid.endswith(".lock") and pid!="omarchy.lock":
+            print(pid); sys.exit(0)
+except Exception:
+    pass
+PY
+)
+    [[ -n "$id" ]] && { echo "$id"; return; }
+  fi
+  # Fall back to the plugin's own recorded id if present.
+  local state="$HOME/.local/state/face.howdy/active-lock-id"
+  [[ -f "$state" ]] && cat "$state" || echo "stock"
 }
 
 echo "howdy_pkg=$(howdy_pkg)"

@@ -74,4 +74,8 @@ else
   msg "Kept howdy packages + models (re-enable reuses them instantly)."
 fi
 
+# Drop the enrollment marker so status no longer reports a face.
+rm -f /etc/omarchy/face-howdy/enrolled 2>/dev/null || true
+rmdir /etc/omarchy/face-howdy 2>/dev/null || true
+
 exit 0

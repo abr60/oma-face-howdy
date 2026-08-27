@@ -198,7 +198,7 @@ Item {
   function enrollFace() {
     root.intent = "enroll"
     root.beginTask("enrolling face")
-    root.runUserCmd("sudo howdy add 2>&1 || true; echo 'done: enroll'")
+    root.runUserCmd("sudo howdy add 2>&1 || true; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; echo 'done: enroll'")
   }
   function testFace() {
     root.intent = "test"
@@ -208,7 +208,7 @@ Item {
   function removeFace() {
     root.intent = "clearFace"
     root.beginTask("clearing faces")
-    root.runUserCmd("sudo howdy clear -y 2>&1 || true; echo 'done: clear'")
+    root.runUserCmd("sudo howdy clear -y 2>&1 || true; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; echo 'done: clear'")
   }
 
   // Run an arbitrary (root) command through the shared setup process.
