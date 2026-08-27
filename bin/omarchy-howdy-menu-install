@@ -66,6 +66,51 @@ fi
 # Strip //-style comments for analysis only; never rewrite the original bytes.
 stripped=$(sed -E 's@^\s*//.*@@' "$EXT")
 
+# Self-heal: if the extension is malformed (e.g. a prior plugin's remove left a
+# dangling '{' and no closing brace), the Omarchy menu parser DROPS the whole
+# user extension — killing every plugin row including this one. Rebuild a valid
+# JSONC that salvages any surviving "key": { ... } rows, then add our own.
+if ! python3 - "$EXT" 2>/dev/null <<'PY' >/dev/null
+import re,sys
+s=open(sys.argv[1]).read()
+s=re.sub(r'^\s*//.*$','',s,flags=re.M)
+s=re.sub(r',(\s*[}\]])',r'\1',s)
+import json
+try:
+    json.loads(s); sys.exit(0)
+except Exception:
+    sys.exit(1)
+PY
+then
+  cp "$EXT" "$EXT.bak.$(date +%s)"
+  python3 - "$EXT" "$ROW_ID" "$ENTRY" <<'PY'
+import re,json,sys
+raw=open(sys.argv[1]).read()
+rows={}
+for m in re.finditer(r'"([A-Za-z0-9_.-]+)"\s*:\s*\{', raw):
+    i=m.start(); depth=0; k=raw.find('{',i)+1
+    while k < len(raw):
+        if raw[k]=='{': depth+=1
+        elif raw[k]=='}':
+            depth-=1
+            if depth==0: break
+        k+=1
+    body=raw[raw.find('{',i):k+1]
+    body=body.strip()
+    if body.startswith('{') and body.endswith('}') and body!='{}':
+        rows[m.group(1)]=body
+rows[sys.argv[2]]='{"icon":"\U0001F5FF","label":"Face Howdy","aliases":["face","howdy","face-unlock"],"action":"'+sys.argv[3]+'"}'
+out=['{']
+for i,(k,v) in enumerate(rows.items()):
+    sep=',' if i<len(rows)-1 else ''
+    out.append('  '+json.dumps(k)+': '+v+sep)
+out.append('}')
+open(sys.argv[1],'w').write('\n'.join(out)+'\n')
+PY
+  # Repair rebuilt a valid file that already includes our row — done.
+  exit 0
+fi
+
 # Install: an existing row is left alone.
 if printf '%s\n' "$stripped" | grep -q "\"$ROW_ID\""; then
   exit 0
