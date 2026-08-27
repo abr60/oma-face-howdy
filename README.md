@@ -1,5 +1,8 @@
 # Face Howdy
 
+[![GitHub](https://img.shields.io/badge/GitHub-abr60%2Foma--face--howdy-181717?logo=github&logoColor=white)](https://github.com/abr60/oma-face-howdy)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Unlock your Omarchy desktop with your face — **Howdy**, installed and managed
 entirely through a native Omarchy wizard.
 
@@ -64,7 +67,7 @@ License: [MIT](LICENSE).
 ## Installation
 
 ```sh
-omarchy plugin add <your-git-url> --enable
+omarchy plugin add https://github.com/abr60/oma-face-howdy.git --enable
 ```
 
 Enabling the plugin self-installs the **setup › Security › Face Howdy** row
