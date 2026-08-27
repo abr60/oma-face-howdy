@@ -18,6 +18,9 @@ import qs.Ui
 // thinkfan widget uses). It owns its own menu row (setup > security > Face
 // Howdy) so it stays reachable across Omarchy upgrades, and cleans that row up
 // when it is disabled or removed.
+//
+// Styled as a security control panel: a polkit-style accent panel with a hero
+// header, status readout cells, accent progress, and matched qs.Ui controls.
 
 Item {
   id: root
@@ -53,20 +56,23 @@ Item {
   property var quotes: []
 
   // ------------------------------------------------------------------ style
-  property color background: Color.menu.background
-  property color foreground: Color.menu.text
-  property color border: Color.menu.border
-  property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
-  property color scrim: Color.menu.scrim
-  property color selectedBackground: Color.menu.selectedBackground
-  property color selectedText: Color.menu.selectedText
+  // Security-panel palette: the polkit auth surface (built for lock/polkit
+  // dialogs) accents the whole window, with urgent for destructive actions.
+  readonly property color surfaceColor: Color.polkit.background
+  readonly property color surfaceText: Color.polkit.text
+  readonly property color surfaceBorder: Color.polkit.border
+  readonly property color accent: Color.accent
+  readonly property color foreground: Color.foreground
+  readonly property color muted: Color.muted
+  readonly property color urgent: Color.urgent
+  readonly property color scrim: Color.polkit.scrim
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
   property int contentMargin: Style.spacing.panelPadding
   property int contentSpacing: Style.spacing.md
-  property int cardWidth: Math.min(Style.space(440), panel.width - Style.gapsOut * 2)
-  property int cardHeight: Math.min(Style.space(580), panel.height - Style.gapsOut * 2)
-  property int rowHeight: Math.max(Style.space(42), Style.font.body + Style.spacing.controlPaddingY * 2)
+  property int cardWidth: Math.min(Style.space(460), panel.width - Style.gapsOut * 2)
+  property int cardHeight: Math.min(Style.space(600), panel.height - Style.gapsOut * 2)
+  property int rowHeight: Math.max(Style.space(44), Style.font.body + Style.spacing.controlPaddingY * 2)
   property int buttonHeight: Math.max(Style.space(38), Style.font.body + Style.spacing.controlPaddingY)
 
   // ---------------------------------------------------------------- open
@@ -103,6 +109,8 @@ Item {
   function yes(v) { return v === "yes" }
   function installed() { return root.yes(root.status.howdy_pkg) && root.yes(root.status.leire_pkg) }
   function pamDeployed() { return root.yes(root.status.pam_howdy_sudo) || root.yes(root.status.lock_pam) }
+
+  function statusGood(key) { return root.yes(root.status[key]) }
 
   // -------------------------------------------------------------- install
   // Full sequence: packages → ir → models → pam. After pam we patch the lock.
@@ -335,7 +343,11 @@ Item {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
 
-    Rectangle { anchors.fill: parent; color: root.scrim }
+    Rectangle {
+      anchors.fill: parent
+      color: root.scrim
+      // subtle radial dim in the center so the panel feels layered
+    }
     MouseArea { anchors.fill: parent; onClicked: root.dismiss() }
 
     BorderSurface {
@@ -344,8 +356,8 @@ Item {
       height: root.cardHeight
       radius: root.cornerRadius
       anchors.centerIn: parent
-      color: root.background
-      borderSpec: root.borderSpec
+      color: root.surfaceColor
+      borderSpec: Border.surfaceSpec("polkit", "border", root.surfaceBorder, Math.max(1, Style.space(1)))
       padding: root.contentMargin
       MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -359,98 +371,208 @@ Item {
           anchors.fill: parent
           spacing: root.contentSpacing
 
-          // header
-          Row {
-            id: headerRow
+          // ------------------------------------------------- hero header
+          Item {
+            id: heroHeader
             width: parent.width
-            height: Math.max(Style.font.title, Style.font.body) + 4
-            spacing: root.contentSpacing
-            Text { text: "🗿"; font.family: root.fontFamily; font.pixelSize: Style.font.title; anchors.verticalCenter: parent.verticalCenter }
-            Text { text: "Face Howdy"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; anchors.verticalCenter: parent.verticalCenter }
-            Text {
-              text: root.pageLabel()
-              color: root.border
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
+            height: Math.max(Style.space(52), Style.font.title + Style.space(12))
+
+            // accent-ringed face monogram
+            Rectangle {
+              id: mono
+              width: Style.space(42); height: Style.space(42)
+              radius: Style.space(21)
+              anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
+              color: Util.alpha(root.accent, 0.10)
+              border.width: Math.max(1, Style.space(1))
+              border.color: root.accent
+              Text {
+                anchors.centerIn: parent
+                text: "◉"
+                color: root.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+              }
+            }
+
+            Column {
+              anchors.left: mono.right
+              anchors.leftMargin: root.contentSpacing
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: 1
+              Text {
+                text: "Face Howdy"
+                color: root.surfaceText
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+              Text {
+                text: root.subtitle()
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            // accent page-label pill
+            Rectangle {
               anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              width: pill.implicitWidth + Style.space(16)
+              height: pill.implicitHeight + Style.space(8)
+              radius: (pill.implicitHeight + Style.space(8)) / 2
+              color: Util.alpha(root.accent, 0.16)
+              border.width: Math.max(1, Style.space(1))
+              border.color: Util.alpha(root.accent, 0.35)
+              Text {
+                id: pill
+                anchors.centerIn: parent
+                text: root.pageLabel()
+                color: root.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
             }
           }
-          Rectangle { width: parent.width; height: 1; color: root.border }
 
-          // body
+          Rectangle { width: parent.width; height: Math.max(1, Style.space(1)); color: Util.alpha(root.surfaceBorder, 0.55) }
+
+          // ------------------------------------------------------- body
           Item {
             id: body
             width: parent.width
-            height: Math.max(140, card.height - headerRow.height - footer.height - root.contentSpacing * 3)
+            height: Math.max(150, card.height - heroHeader.height - footer.height - root.contentSpacing * 3)
 
-            // status
+            // status — hero summary + readout cells
             Column {
               visible: root.page === "status"
-              width: parent.width
+              anchors.fill: parent
               spacing: root.contentSpacing
-              Text {
-                text: root.statusLoaded ? root.overviewText() : "Checking…"
-                color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body
-                wrapMode: Text.WordWrap; width: parent.width; lineHeight: 1.4
+
+              // summary banner
+              Rectangle {
+                width: parent.width
+                height: summaryCol.implicitHeight + Style.space(16)
+                radius: root.cornerRadius
+                color: Util.alpha(root.polkitAccent(), 0.10)
+                border.width: 0
+                Column {
+                  id: summaryCol
+                  anchors.centerIn: parent
+                  width: parent.width - Style.space(24)
+                  spacing: 2
+                  Text {
+                    width: parent.width
+                    text: root.statusLoaded ? root.overviewTitle() : "Checking…"
+                    color: root.surfaceText
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
+                  }
+                  Text {
+                    width: parent.width
+                    text: root.statusLoaded ? root.overviewText() : "Reading system state…"
+                    color: root.muted
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    wrapMode: Text.WordWrap
+                    lineHeight: 1.3
+                    horizontalAlignment: Text.AlignHCenter
+                  }
+                }
               }
-              Column {
-                width: parent.width; spacing: 4
+
+              // readout cells grid (2 columns)
+              Flow {
+                width: parent.width
+                spacing: root.contentSpacing
+
                 Repeater {
-                  model: root.statusRows()
-                  delegate: Row {
-                    width: parent.width; height: root.rowHeight; spacing: root.contentSpacing
-                    Text {
-                      width: parent.width - 110; elide: Text.ElideRight
-                      text: model.label; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body
-                    }
-                    Rectangle {
-                      width: 96; height: Math.max(0, parent.height - 14); radius: root.cornerRadius
-                      color: model.okay ? root.selectedBackground : root.scrim
-                      anchors.verticalCenter: parent.verticalCenter
-                      Text {
-                        anchors.centerIn: parent; text: model.value
-                        color: model.okay ? root.selectedText : root.foreground
-                        font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true
-                      }
-                    }
+                  model: root.statusCells()
+                  delegate: Cell {
+                    label: modelData.label
+                    good: modelData.okay
+                    valueText: modelData.value
                   }
                 }
               }
             }
 
-            // install / working
+            // install / working — accent progress + quote + live log
             Column {
               visible: root.page === "install"
-              width: parent.width; spacing: root.contentSpacing
+              anchors.fill: parent
+              spacing: root.contentSpacing
+
               Rectangle {
-                width: parent.width; height: Math.max(Style.space(16), 10); radius: root.cornerRadius; color: root.scrim
+                width: parent.width
+                height: Math.max(Style.space(18), Style.font.body)
+                radius: root.cornerRadius
+                color: Util.alpha(root.accent, 0.12)
+                clip: true
                 Rectangle {
-                  width: parent.width * root.installProgress(); height: parent.height; radius: root.cornerRadius
-                  color: root.selectedBackground
-                  Behavior on width { NumberAnimation { duration: 250 } }
+                  id: fill
+                  width: parent.width * root.installProgress()
+                  height: parent.height
+                  radius: root.cornerRadius
+                  color: Util.alpha(root.accent, 0.55)
+                  Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
+                }
+                Text {
+                  anchors.right: parent.right; anchors.rightMargin: Style.space(10)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.installPercent()
+                  color: root.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
                 }
               }
+
               Text {
                 text: root.installProgressLabel()
-                color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true
+                color: root.surfaceText
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.bold: true
               }
+
+              // fun-quote callout
               Text {
+                width: parent.width
                 text: root.installing ? root.currentQuote : (root.installComplete ? root.installCompleteMsg() : "")
-                color: root.border; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.italic: true
-                wrapMode: Text.WordWrap; width: parent.width
+                color: root.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.italic: true
+                wrapMode: Text.WordWrap
                 visible: root.installing || root.installComplete
               }
+
+              // live log
               Rectangle {
-                width: parent.width; height: Math.max(120, parent.height - 130); radius: root.cornerRadius; color: root.scrim; clip: true
+                width: parent.width
+                height: Math.max(120, parent.height - Style.space(150))
+                radius: root.cornerRadius
+                color: Util.alpha(Color.background, 0.40)
+                clip: true
                 Flickable {
                   anchors.fill: parent; anchors.margins: root.contentSpacing
                   contentHeight: logCol.implicitHeight
                   Column {
                     id: logCol; width: parent.width
                     Text {
-                      text: root.logText; color: root.foreground; font.family: "monospace"
-                      font.pixelSize: Style.font.body - 2; wrapMode: Text.Wrap; width: parent.width
+                      text: root.logText
+                      color: root.muted
+                      font.family: "monospace"
+                      font.pixelSize: Style.font.body - 2
+                      wrapMode: Text.Wrap
+                      width: parent.width
                     }
                   }
                 }
@@ -460,84 +582,184 @@ Item {
             // confirm
             Column {
               visible: root.page === "confirm"
-              width: parent.width; spacing: root.contentSpacing
+              anchors.fill: parent
+              spacing: root.contentSpacing
               Text {
-                text: "Ready to wire Howdy into the system.\n\nThis injects one pam_howdy auth line into sudo, SDDM and polkit, creates a dedicated omarchy-lock-howdy PAM service, configures the IR emitter to fire at unlock, and patches your lock screen to unlock by face when you lift the lid or hit Enter.\n\nYour password auth stays as a fallback and nothing is removed. Proceed?"
-                color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body
-                wrapMode: Text.WordWrap; width: parent.width; lineHeight: 1.4
+                width: parent.width
+                text: "Ready to wire Howdy into the system."
+                color: root.surfaceText
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+                wrapMode: Text.WordWrap
+              }
+              Rectangle {
+                width: parent.width
+                height: explain.implicitHeight + Style.space(16)
+                radius: root.cornerRadius
+                color: Util.alpha(root.accent, 0.06)
+                Text {
+                  id: explain
+                  anchors.centerIn: parent
+                  width: parent.width - Style.space(24)
+                  text: "This injects one pam_howdy auth line into sudo, SDDM and polkit, creates a dedicated omarchy-lock-howdy PAM service, configures the IR emitter to fire at unlock, and patches your lock screen to unlock by face when you lift the lid or hit Enter.\n\nYour password auth stays as a fallback and nothing is removed. Proceed?"
+                  color: root.surfaceText
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  wrapMode: Text.WordWrap
+                  lineHeight: 1.4
+                }
               }
             }
 
-            // remove
+            // remove — urgent caution
             Column {
               visible: root.page === "remove"
-              width: parent.width; spacing: root.contentSpacing
+              anchors.fill: parent
+              spacing: root.contentSpacing
               Text {
-                text: "Remove Face Howdy?\n\nYour password auth is always left working. Choose whether to also uninstall the howdy / IR-emitter packages (and your enrolled face), or keep them so a later re-enable is instant."
-                color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body
-                wrapMode: Text.WordWrap; width: parent.width; lineHeight: 1.4
+                width: parent.width
+                text: "Remove Face Howdy?"
+                color: root.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+                wrapMode: Text.WordWrap
+              }
+              Rectangle {
+                width: parent.width
+                height: explain2.implicitHeight + Style.space(16)
+                radius: root.cornerRadius
+                color: Util.alpha(root.urgent, 0.10)
+                Text {
+                  id: explain2
+                  anchors.centerIn: parent
+                  width: parent.width - Style.space(24)
+                  text: "Your password auth is always left working. Choose whether to also uninstall the howdy / IR-emitter packages (and your enrolled face), or keep them so a later re-enable is instant."
+                  color: root.surfaceText
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  wrapMode: Text.WordWrap
+                  lineHeight: 1.4
+                }
               }
               Row {
-                width: parent.width; spacing: root.contentSpacing
-                Btn { text: "Remove (keep pkgs)"; accent: true; onClicked: root.startRemove(true) }
-                Btn { text: "Remove + delete pkgs"; onClicked: root.startRemove(false) }
+                spacing: root.contentSpacing
+                Button {
+                  text: "Remove (keep pkgs)"
+                  selected: true
+                  onClicked: root.startRemove(true)
+                }
+                Button {
+                  text: "Remove + delete pkgs"
+                  selected: true
+                  accent: root.urgent
+                  onClicked: root.startRemove(false)
+                }
               }
             }
 
-            // face data
+            // face data — action rows
             Column {
               visible: root.page === "facelist"
-              width: parent.width; spacing: root.contentSpacing
+              anchors.fill: parent
+              spacing: root.contentSpacing
               Text {
-                text: "Face data.\n\nAdd opens Howdy's own terminal UI to enroll your face. Test runs a recognition check. Clear removes all enrolled faces. Everything runs under root."
-                color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body
-                wrapMode: Text.WordWrap; width: parent.width; lineHeight: 1.4
+                width: parent.width
+                text: "Face data"
+                color: root.surfaceText
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+                wrapMode: Text.WordWrap
               }
-              Row {
-                width: parent.width; spacing: root.contentSpacing
-                Btn { text: "Add face"; accent: true; onClicked: root.enrollFace() }
-                Btn { text: "Test"; onClicked: root.testFace() }
-                Btn { text: "Clear faces"; onClicked: root.removeFace() }
+              Rectangle {
+                width: parent.width
+                height: explain3.implicitHeight + Style.space(16)
+                radius: root.cornerRadius
+                color: Util.alpha(root.accent, 0.06)
+                Text {
+                  id: explain3
+                  anchors.centerIn: parent
+                  width: parent.width - Style.space(24)
+                  text: "Add opens Howdy's own terminal UI to enroll your face. Test runs a recognition check. Clear removes all enrolled faces. Everything runs under root."
+                  color: root.surfaceText
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  wrapMode: Text.WordWrap
+                  lineHeight: 1.4
+                }
+              }
+              Column {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: root.contentSpacing
+                Button {
+                  text: "Add face"
+                  selected: true
+                  width: Style.space(220)
+                  onClicked: root.enrollFace()
+                }
+                Button {
+                  text: "Test recognition"
+                  bordered: true
+                  width: Style.space(220)
+                  onClicked: root.testFace()
+                }
+                Button {
+                  text: "Clear faces"
+                  selected: true
+                  accent: root.urgent
+                  width: Style.space(220)
+                  onClicked: root.removeFace()
+                }
               }
             }
           }
 
-          // footer
+          // ------------------------------------------------------- footer
           Row {
             id: footer
             width: parent.width
             height: root.buttonHeight
             spacing: root.contentSpacing
 
-            Btn { text: "Close"; onClicked: root.dismiss() }
+            Button {
+              text: "Close"
+              bordered: true
+              onClicked: root.dismiss()
+            }
 
-            Btn {
+            Button {
               text: "Back"
+              bordered: true
               visible: root.page === "facelist" || root.page === "remove" || root.page === "confirm"
               onClicked: root.page = "status"
             }
 
-            Btn {
+            Button {
               text: "Deploy PAM"
+              bordered: true
               visible: root.page === "status" && root.installed() && !root.pamDeployed() && !root.installing
               onClicked: root.page = "confirm"
             }
 
-            Btn {
+            Button {
               text: "Face data"
+              bordered: true
               visible: root.page === "status" && root.installed() && !root.installing
               onClicked: root.page = "facelist"
             }
 
-            Btn {
+            Button {
               text: "Remove"
+              bordered: true
               visible: root.page === "status" && (root.installed() || root.pamDeployed()) && !root.installing
               onClicked: root.page = "remove"
             }
 
-            Btn {
+            Button {
               text: root.primaryLabel()
-              accent: true
+              selected: true
               visible: root.primaryVisible()
               onClicked: root.primaryAction()
             }
@@ -547,7 +769,75 @@ Item {
     }
   }
 
+  // ------------------------------------------------------------------ cells
+  // A single readout cell: accent-tinted when the led is "good".
+  component Cell : Rectangle {
+    id: cell
+    property string label: ""
+    property string valueText: ""
+    property bool good: false
+
+    readonly property real cellH: Math.max(root.rowHeight - 4, Style.font.body + Style.space(18))
+    readonly property real cellW: Style.space(208)
+
+    width: cell.cellW
+    height: cell.cellH
+    radius: root.cornerRadius
+    color: cell.good ? Util.alpha(root.accent, 0.12) : Util.alpha(root.muted, 0.10)
+    border {
+      width: Math.max(1, Style.space(1))
+      color: cell.good ? Util.alpha(root.accent, 0.45) : Util.alpha(root.muted, 0.25)
+    }
+
+    Row {
+      anchors.fill: parent
+      anchors.leftMargin: Style.space(10); anchors.rightMargin: Style.space(10)
+      anchors.topMargin: Style.space(8); anchors.bottomMargin: Style.space(8)
+      spacing: Style.space(8)
+
+      // status led / glyph
+      Rectangle {
+        width: Style.space(14); height: Style.space(14)
+        radius: Style.space(7)
+        anchors.verticalCenter: parent.verticalCenter
+        color: cell.good ? root.accent : root.urgent
+        Text {
+          anchors.centerIn: parent
+          text: cell.good ? "✓" : "✗"
+          color: root.surfaceColor
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          font.bold: true
+        }
+      }
+
+      Column {
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 1
+        Text {
+          text: cell.label
+          color: root.muted
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+        Text {
+          text: cell.valueText
+          color: cell.good ? root.accent : root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+      }
+    }
+  }
+
   // ------------------------------------------------- label / progress fns
+  function polkitAccent() {
+    return Color.polkit.accent
+  }
+  function installPercent() {
+    return Math.round(root.installProgress() * 100) + "%"
+  }
   function installProgress() {
     switch (root.progressLabel) {
       case "installing packages": return 0.2
@@ -570,6 +860,13 @@ Item {
     return root.installComplete ? "Complete" : (m[root.progressLabel] || root.progressLabel)
   }
 
+  function overviewTitle() {
+    if (!root.statusLoaded) return "Checking…"
+    if (root.installComplete) return "Setup complete"
+    if (root.pamDeployed() && root.yes(root.status.enrolled)) return "Protected"
+    if (root.installed()) return "Ready to secure"
+    return "Not set up yet"
+  }
   function overviewText() {
     var s = root.status, rows = []
     if (root.installed()) rows.push("Howdy packages installed.")
@@ -577,29 +874,37 @@ Item {
     if (root.yes(s.enrolled)) rows.push("A face is enrolled.")
     if (root.pamDeployed()) rows.push("PAM integration active.")
     if (root.yes(s.ir_udev)) rows.push("IR emitter configured.")
-    if (rows.length === 0) rows.push("Face unlock isn't set up yet. Run Install to begin.")
-    return rows.join("\n") + "\n"
+    if (rows.length === 0) rows.push("Run Install to enable face unlock.")
+    return rows.join("  •  ")
   }
 
-  function statusRows() {
+  function statusCells() {
     var s = root.status, arr = []
-    function add(label, key, okVal) {
-      arr.push({ label: label, value: root.yes(s[key]) ? "on" : "off", okay: root.yes(s[key]) === okVal })
+    function add(label, key) {
+      arr.push({ label: label, value: root.yes(s[key]) ? "Enabled" : "Not set", okay: root.yes(s[key]) })
     }
-    add("Howdy package", "howdy_pkg", true)
-    add("IR emitter pkg", "leire_pkg", true)
-    add("PAM (sudo)", "pam_howdy_sudo", true)
-    add("Lock PAM", "lock_pam", true)
-    add("IR emitter", "ir_udev", true)
-    add("Face models", "models", true)
-    add("Face enrolled", "enrolled", true)
-    arr.push({ label: "Lock screen", value: String(s.active_lock || "stock"), okay: String(s.active_lock || "stock") !== "stock" })
+    add("Howdy package", "howdy_pkg")
+    add("IR emitter pkg", "leire_pkg")
+    add("PAM (sudo)", "pam_howdy_sudo")
+    add("Lock PAM", "lock_pam")
+    add("IR emitter", "ir_udev")
+    add("Face models", "models")
+    add("Face enrolled", "enrolled")
+    var lockName = String(s.active_lock || "stock")
+    var lockGood = lockName !== "stock"
+    arr.push({ label: "Lock screen", value: lockGood ? lockName : "Stock", okay: lockGood })
     return arr
   }
 
   function installCompleteMsg() {
     if (root.yes(root.status.enrolled)) return "Setup complete and a face is enrolled."
     return "Packages, models and auth are ready — now enroll your face (Face data → Add)."
+  }
+
+  function subtitle() {
+    if (root.yes(root.status.enrolled) && root.pamDeployed()) return "Face unlock is active"
+    if (root.installed()) return "Looking good — almost there"
+    return "Add Windows-Hello-style face unlock"
   }
 
   function primaryLabel() {
@@ -632,34 +937,6 @@ Item {
         if (root.installComplete) { root.page = "status"; root.installComplete = false; return }
         return
       case "confirm": root.startDeployPam(); return
-    }
-  }
-
-  // ------------------------------------------------------------------ button
-  component Btn : Rectangle {
-    id: b
-    property string text: ""
-    property bool accent: false
-    signal clicked()
-    implicitHeight: root.buttonHeight
-    implicitWidth: Math.max(Style.space(84), label.implicitWidth + root.contentSpacing * 2)
-    radius: root.cornerRadius
-    color: b.accent ? root.selectedBackground : "transparent"
-    border.width: b.accent ? 0 : 1
-    border.color: root.border
-    Text {
-      id: label
-      anchors.centerIn: parent
-      text: b.text
-      color: b.accent ? root.selectedText : root.foreground
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-    }
-    MouseArea {
-      anchors.fill: parent; hoverEnabled: true
-      onEntered: if (!b.accent) b.color = root.selectedBackground
-      onExited: if (!b.accent) b.color = "transparent"
-      onClicked: b.clicked()
     }
   }
 }
