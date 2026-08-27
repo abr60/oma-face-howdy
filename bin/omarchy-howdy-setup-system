@@ -1,0 +1,330 @@
+#!/bin/bash
+#
+# face.howdy:setup-system — root privileged setup for Howdy face recognition.
+#
+# Self-contained (bundled with the face.howdy Omarchy plugin). Runs privileged
+# steps idempotently. Driven by the plugin's GUI via pkexec, one phase at a
+# time so the wizard can show progress. Each phase is safe to re-run.
+#
+# Usage:
+#   setup-system packages   Install howdy-next-git + linux-enable-ir-emitter-git
+#   setup-system ir        Detect IR camera, configure IR emitter (udev + systemd)
+#   setup-system models    Download ONNX models, write /etc/howdy/config.ini
+#   setup-system pam       Inject Howdy into sudo/sddm/polkit PAM + omarchy-lock-howdy
+#   setup-system all       Run every phase (packages → ir → models → pam)
+#
+# Phases emit plain progress lines; the GUI parses them for the status view.
+# Exit codes: 0=success, 1=fatal, 2=already configured (non-fatal).
+
+set -euo pipefail
+
+PHASE="${1:-all}"
+
+err()  { echo "ERROR: $1" >&2; }
+msg()  { echo "$1"; }
+
+is_installed() { pacman -Q "$1" &>/dev/null; }
+
+# --------------------------------------------------------------------------
+# Phase: packages
+# --------------------------------------------------------------------------
+phase_packages() {
+  msg "Ensuring v4l-utils is present..."
+  if ! is_installed v4l-utils; then
+    if command -v omarchy-pkg-add &>/dev/null; then
+      omarchy-pkg-add v4l-utils
+    else
+      pacman -S --needed --noconfirm v4l-utils
+    fi
+  fi
+
+  if is_installed howdy-next-git && is_installed linux-enable-ir-emitter-git; then
+    msg "Howdy and IR emitter already installed."
+    echo "LEIRE_BIN=$(command -v linux-enable-ir-emitter || echo '')"
+    return 0
+  fi
+
+  msg "Installing howdy-next-git and linux-enable-ir-emitter-git (this can take a while)..."
+
+  if [[ -n "${OMARCHY_PKG_AUR_ADD:-}" && -x "${OMARCHY_PKG_AUR_ADD:-}" ]]; then
+    "$OMARCHY_PKG_AUR_ADD" howdy-next-git linux-enable-ir-emitter-git
+  elif command -v omarchy-pkg-aur-add &>/dev/null; then
+    omarchy-pkg-aur-add howdy-next-git linux-enable-ir-emitter-git
+  elif command -v yay &>/dev/null; then
+    yay -S --needed --noconfirm howdy-next-git linux-enable-ir-emitter-git
+  else
+    err "No AUR helper (yay/omarchy-pkg-aur-add) found — cannot install howdy packages."
+    return 1
+  fi
+
+  if ! is_installed howdy-next-git || ! is_installed linux-enable-ir-emitter-git; then
+    err "Package install failed."
+    return 1
+  fi
+
+  if [[ -z "$(command -v linux-enable-ir-emitter 2>/dev/null || true)" ]]; then
+    err "linux-enable-ir-emitter binary not on PATH after install."
+    return 1
+  fi
+
+  echo "LEIRE_BIN=$(command -v linux-enable-ir-emitter)"
+  return 0
+}
+
+# --------------------------------------------------------------------------
+# Phase: ir — detect IR camera, build udev rule + systemd services
+# --------------------------------------------------------------------------
+phase_ir() {
+  local LEIRE_BIN
+  LEIRE_BIN=$(command -v linux-enable-ir-emitter 2>/dev/null || "")
+  if [[ -z "$LEIRE_BIN" ]]; then
+    err "linux-enable-ir-emitter not installed. Run 'setup-system packages' first."
+    return 1
+  fi
+
+  # Detect the IR camera (a v4l device exposing GREY/YUV - the IR sensor).
+  local IR_DEVICE=""
+  local STABLE_PATH="/dev/v4l/by-path/pci-0000:00:14.0-usb-0:4:1.2-video-index0"
+  if [[ -e "$STABLE_PATH" ]] && v4l2-ctl --device="$STABLE_PATH" --list-formats 2>/dev/null | grep -qi grey; then
+    IR_DEVICE="$STABLE_PATH"
+  else
+    for dev in /dev/video*; do
+      [[ -e "$dev" ]] || continue
+      if v4l2-ctl --device="$dev" --list-formats 2>/dev/null | grep -qi grey; then
+        IR_DEVICE="$dev"
+        break
+      fi
+    done
+  fi
+
+  if [[ -z "$IR_DEVICE" ]]; then
+    msg "IR_DEVICE=NONE"
+    msg "No IR (grey) camera detected — IR emitter cannot be configured."
+    echo "IR_DEVICE="
+    return 0
+  fi
+
+  echo "IR_DEVICE=$IR_DEVICE"
+
+  # Resolve USB vendor/product for a stable udev match.
+  local REAL VENDOR PRODUCT
+  REAL=$(readlink -f "$IR_DEVICE" 2>/dev/null || echo "$IR_DEVICE")
+  VENDOR=$(udevadm info --query=property --name="$REAL" 2>/dev/null \
+    | awk -F= '$1=="ID_VENDOR_ID"{print $2}' || true)
+  PRODUCT=$(udevadm info --query=property --name="$REAL" 2>/dev/null \
+    | awk -F= '$1=="ID_MODEL_ID"{print $2}' || true)
+
+  if [[ -z "$VENDOR" || -z "$PRODUCT" ]]; then
+    msg "Could not resolve USB IDs; falling back to kernel name for $IR_DEVICE."
+    local KERN name
+    KERN=$(basename "$REAL")
+    name="${KERN#video}"
+    name="video${name}*"
+
+    cat > /etc/udev/rules.d/99-howdy-ir-emitter.rules <<EOF
+# Auto re-apply IR emitter when IR camera appears. face.howdy-managed.
+ACTION=="add", SUBSYSTEM=="video4linux", KERNEL=="$KERN", TAG+="systemd", ENV{SYSTEMD_WANTS}="ir-emitter.service"
+EOF
+  else
+    cat > /etc/udev/rules.d/99-howdy-ir-emitter.rules <<EOF
+# Auto re-apply IR emitter when IR camera appears. face.howdy-managed.
+ACTION=="add", SUBSYSTEM=="video4linux", ATTRS{idVendor}=="$VENDOR", ATTRS{idProduct}=="$PRODUCT", TAG+="systemd", ENV{SYSTEMD_WANTS}="ir-emitter.service"
+EOF
+  fi
+
+  # systemd oneshot services.
+  cat > /etc/systemd/system/ir-emitter.service <<EOF
+[Unit]
+Description=Enable IR Emitter for Howdy
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+ExecStart=$LEIRE_BIN run
+EOF
+
+  cat > /etc/systemd/system/ir-emitter-resume.service <<EOF
+[Unit]
+Description=Re-enable IR Emitter after resume
+After=suspend.target hibernate.target hybrid-sleep.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+ExecStart=$LEIRE_BIN run
+
+[Install]
+WantedBy=suspend.target hibernate.target hybrid-sleep.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable ir-emitter-resume.service 2>/dev/null || true
+  udevadm control --reload-rules 2>/dev/null || true
+  udevadm trigger --subsystem-match=video4linux --action=add 2>/dev/null || true
+  systemctl start ir-emitter.service 2>/dev/null || true
+
+  echo "IR_DEVICE=$IR_DEVICE"
+  return 0
+}
+
+# --------------------------------------------------------------------------
+# Phase: models — ONNX face models + /etc/howdy/config.ini
+# --------------------------------------------------------------------------
+phase_models() {
+  local IR_DEVICE="${FACE_HOWDY_IR_DEVICE:-}"
+  if systemctl is-active ir-emitter.service &>/dev/null || [[ -f /etc/udev/rules.d/99-howdy-ir-emitter.rules ]]; then
+    : # IR phase already ran (or is configured) — device may not have been recorded; detect it.
+  fi
+
+  if [[ -z "$IR_DEVICE" ]]; then
+    # Best-effort: reuse what setup-system wrote last time (stdout parse is not persisted).
+    for dev in /dev/v4l/by-path/*video-index0 /dev/video*; do
+      [[ -e "$dev" ]] || continue
+      if v4l2-ctl --device="$dev" --list-formats 2>/dev/null | grep -qi grey; then
+        IR_DEVICE="$dev"
+        break
+      fi
+    done
+  fi
+  [[ -n "$IR_DEVICE" ]] || IR_DEVICE="/dev/video0"
+
+  # Download ONNX face models if not present.
+  local MODELS_DIR="/usr/share/howdy/models"
+  if ls "$MODELS_DIR"/*.onnx &>/dev/null 2>&1; then
+    msg "ONNX models already present."
+  else
+    msg "Downloading Howdy face models..."
+    howdy download-models || {
+      err "Model download failed — run manually: sudo howdy download-models"
+      return 1
+    }
+  fi
+
+  # Write config.ini (back up any existing).
+  mkdir -p /etc/howdy
+  if [[ -f /etc/howdy/config.ini ]]; then
+    cp -n /etc/howdy/config.ini /etc/howdy/config.ini.bak || true
+  fi
+
+  cat > /etc/howdy/config.ini <<EOF
+[core]
+detection_notice = false
+timeout_notice = true
+no_confirmation = true
+suppress_unknown = true
+abort_if_ssh = true
+abort_if_lid_closed = false
+disabled = false
+
+[video]
+timeout = 5
+device_path = $IR_DEVICE
+warn_no_device = true
+max_height = 240
+frame_width = 320
+frame_height = 320
+dark_threshold = 70
+force_mjpeg = false
+exposure = -1
+device_fps = 0
+rotate = 0
+
+[face]
+yunet_model = default
+sface_model = default
+yunet_score_threshold = 0.8845
+yunet_nms_threshold = 0.3
+yunet_top_k = 1000
+sface_metric = cosine
+sface_threshold = 0.6942
+
+[snapshots]
+save_failed = false
+save_successful = false
+
+[debug]
+end_report = false
+EOF
+
+  echo "IR_DEVICE=$IR_DEVICE"
+  return 0
+}
+
+# --------------------------------------------------------------------------
+# Phase: pam — inject Howdy PAM into sudo/sddm/polkit + omarchy-lock-howdy
+# --------------------------------------------------------------------------
+phase_pam() {
+  local LEIRE_BIN
+  LEIRE_BIN=$(command -v linux-enable-ir-emitter 2>/dev/null || "/usr/bin/linux-enable-ir-emitter")
+  local PAM_EXEC_LINE="auth optional pam_exec.so /usr/bin/env HOME=/root $LEIRE_BIN run"
+
+  inject() {
+    local pam_file="$1" label="$2"
+    if [[ ! -f "$pam_file" ]]; then
+      msg "$label: $pam_file missing — skipped"
+      return
+    fi
+
+    # Insert pam_howdy before pam_fprintd if present, else before system-auth.
+    if ! grep -q "pam_howdy" "$pam_file" 2>/dev/null; then
+      if grep -q "pam_fprintd" "$pam_file" 2>/dev/null; then
+        sed -i "/pam_fprintd\\.so/i auth       sufficient   pam_howdy.so" "$pam_file"
+      elif grep -q "system-auth" "$pam_file" 2>/dev/null; then
+        sed -i "/system-auth/i auth       sufficient   pam_howdy.so" "$pam_file"
+      else
+        sed -i "1i auth       sufficient   pam_howdy.so" "$pam_file"
+      fi
+    fi
+
+    # Ensure the IR emitter pam_exec line sits before howdy/the stack.
+    if ! grep -qF "$LEIRE_BIN run" "$pam_file" 2>/dev/null; then
+      sed -i "/pam_howdy\\.so/i $PAM_EXEC_LINE" "$pam_file"
+    fi
+    msg "$label: pam_howdy present."
+  }
+
+  inject /etc/pam.d/sudo "sudo"
+  inject /etc/pam.d/sddm "sddm"
+  if [[ -f /etc/pam.d/polkit-1 ]]; then
+    inject /etc/pam.d/polkit-1 "polkit"
+  else
+    cat > /etc/pam.d/polkit-1 <<EOF
+$PAM_EXEC_LINE
+auth       sufficient   pam_howdy.so
+auth       required     pam_unix.so
+
+account    required     pam_unix.so
+password   required     pam_unix.so
+session    required     pam_unix.so
+EOF
+    msg "polkit: created /etc/pam.d/polkit-1 with Howdy."
+  fi
+
+  # Dedicated lock-screen PAM service.
+  cat > /etc/pam.d/omarchy-lock-howdy <<'EOF'
+#%PAM-1.0
+auth       required                    pam_howdy.so
+account    include                     system-local-login
+EOF
+  msg "lock: /etc/pam.d/omarchy-lock-howdy written."
+
+  return 0
+}
+
+# --------------------------------------------------------------------------
+case "$PHASE" in
+  packages) phase_packages ;;
+  ir)       phase_ir ;;
+  models)   phase_models ;;
+  pam)      phase_pam ;;
+  all|"")
+    phase_packages
+    phase_ir
+    phase_models
+    phase_pam
+    ;;
+  *)
+    err "Unknown phase: $PHASE (use packages|ir|models|pam|all)"
+    exit 64
+    ;;
+esac

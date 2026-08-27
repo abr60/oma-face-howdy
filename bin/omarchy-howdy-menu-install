@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# omarchy:summary=Install or remove the Face Howdy row in the Omarchy menu
+# omarchy:group=security
+#
+# Adds the setup > security > Face Howdy row to the user menu extension
+# (~/.config/omarchy/extensions/omarchy-menu.jsonc), which the Omarchy menu
+# merges live. The plugin owns its menu entry so it survives core upgrades.
+#
+# The row's action points at a companion entry script copied into the same
+# extensions directory, so the row keeps working — and can clean itself up —
+# even after the plugin is disabled or removed.
+#
+# `--remove` takes the row back out, preserving other rows and comments.
+
+set -euo pipefail
+
+EXT="${OMARCHY_MENU_EXTENSION:-$HOME/.config/omarchy/extensions/omarchy-menu.jsonc}"
+ROW_ID='setup.security.face-howdy'
+EXT_DIR="$(dirname "$EXT")"
+ENTRY="$EXT_DIR/omarchy-howdy-menu-entry"
+
+MODE=install
+
+usage() {
+  echo "Usage: omarchy-howdy-menu-install [--remove]"
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  --remove|--uninstall)
+    MODE=remove
+    ;;
+  "")
+    ;;
+  *)
+    echo "omarchy-howdy-menu-install: unknown option: $1" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+mkdir -p "$EXT_DIR"
+install -m 755 "$SCRIPT_DIR/omarchy-howdy-menu-entry" "$ENTRY"
+
+if [[ $MODE == remove ]]; then
+  exec "$ENTRY" --remove
+fi
+
+if [[ ! -f $EXT ]]; then
+cat >"$EXT" <<EOF
+{
+  // Row added by the face.howdy plugin so the wizard is reachable from the
+  // Omarchy menu. Remove this block if you want the entry gone.
+  "$ROW_ID": {"icon":"🗿","label":"Face Howdy","aliases":["face","howdy","face-unlock"],"action":"$ENTRY"}
+}
+EOF
+  exit 0
+fi
+
+# Strip //-style comments for analysis only; never rewrite the original bytes.
+stripped=$(sed -E 's@^\s*//.*@@' "$EXT")
+
+# Install: an existing row is left alone.
+if printf '%s\n' "$stripped" | grep -q "\"$ROW_ID\""; then
+  exit 0
+fi
+
+row='  "'"$ROW_ID"'": {"icon":"🗿","label":"Face Howdy","aliases":["face","howdy","face-unlock"],"action":"'"$ENTRY"'"}'
+
+line=$(grep -n '^}' "$EXT" | tail -n 1 | cut -d: -f1)
+if [[ -z $line ]]; then
+  printf '%s\n' "$row" >>"$EXT"
+  exit 0
+fi
+
+prev=$((line - 1))
+while (( prev > 0 )); do
+  content=$(sed -n "${prev}p" "$EXT")
+  trimmed=$(printf '%s' "$content" | sed 's@^[[:space:]]*@@')
+  if [[ -n $trimmed && ${trimmed:0:1} != "/" ]]; then
+    break
+  fi
+  prev=$((prev - 1))
+done
+
+if [[ $prev -gt 0 ]]; then
+  last_trimmed=$(printf '%s' "$(sed -n "${prev}p" "$EXT")" | sed 's@[[:space:]]*$@@')
+  if [[ $last_trimmed != "{" && ${last_trimmed: -1} != "," ]]; then
+    sed -i "${prev}s/\$/,/" "$EXT"
+  fi
+  sed -i "${line}i\\$row" "$EXT"
+else
+  sed -i "${line}i\\$row" "$EXT"
+fi

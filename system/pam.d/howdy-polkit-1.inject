@@ -1,0 +1,3 @@
+# PAM lines injectable into /etc/pam.d/polkit-1 by face.howdy.
+auth optional pam_exec.so /usr/bin/env HOME=/root /usr/bin/linux-enable-ir-emitter run
+auth sufficient pam_howdy.so

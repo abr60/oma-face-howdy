@@ -1,0 +1,180 @@
+--- a/Service.qml
++++ b/Service.qml
+@@ -22,6 +22,8 @@
+   property bool fingerprintAuthenticating: false
+   property bool passwordPamConfigured: false
+   property bool fingerprintConfigured: false
++  property bool howdyConfigured: false
++  property bool howdyAuthenticating: false
+   property bool previewVisible: false
+   property string enteredPassword: ""
+   property string pendingPassword: ""
+@@ -35,7 +37,7 @@
+   property bool strandedLockResolved: false
+ 
+   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
+-  readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating
++  readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating || howdyAuthenticating
+ 
+   function realScreenCount() {
+     var screens = Quickshell.screens || []
+@@ -107,6 +109,10 @@
+     if (!fingerprintCheckProc.running) fingerprintCheckProc.running = true
+   }
+ 
++  function refreshHowdyStatus() {
++    if (!howdyCheckProc.running) howdyCheckProc.running = true
++  }
++
+   function logEvent(event) {
+     lastEvent = event
+     lastEventAt = new Date().toISOString()
+@@ -120,9 +126,12 @@
+     failedAttempts = 0
+     authenticatingPassword = false
+     fingerprintAuthenticating = false
++    howdyAuthenticating = false
+     fingerprintRetryTimer.stop()
++    howdyRetryTimer.stop()
+     if (passwordPam.active) passwordPam.abort()
+     if (fingerprintPam.active) fingerprintPam.abort()
++    if (howdyPam.active) howdyPam.abort()
+   }
+ 
+   function beginLock() {
+@@ -140,6 +149,7 @@
+     Qt.callLater(function() {
+       root.refreshBackground()
+       root.refreshFingerprintStatus()
++      root.refreshHowdyStatus()
+     })
+ 
+     return true
+@@ -175,7 +185,11 @@
+ 
+   function submitPassword(value) {
+     var password = String(value || "")
+-    if (!lockRequested || authenticatingPassword || password.length === 0) return
++    if (!lockRequested || authenticatingPassword) return
++    if (password.length === 0) {
++      if (howdyConfigured) root.startHowdy()
++      return
++    }
+ 
+     runWake()
+     pendingPassword = password
+@@ -206,6 +220,24 @@
+     runWake()
+   }
+ 
++  function startHowdy() {
++    if (!lockRequested || !sessionLock.secure || !howdyConfigured) return
++    if (howdyPam.active || howdyAuthenticating) return
++    howdyAuthenticating = true
++    if (!howdyPam.start()) howdyAuthenticating = false
++  }
++
++  function handleHowdyFinished(result) {
++    howdyAuthenticating = false
++
++    if (!lockRequested) return
++    if (result === PamResult.Success) {
++      finishUnlock()
++    } else if (howdyConfigured) {
++      howdyRetryTimer.restart()
++    }
++  }
++
+   function startFingerprint() {
+     if (!lockRequested || !sessionLock.secure || !fingerprintConfigured) return
+     if (fingerprintPam.active || fingerprintAuthenticating) return
+@@ -239,6 +271,7 @@
+         sessionLockStabilizeTimer.stop()
+         pendingSessionLockTimer.stop()
+         root.startFingerprint()
++        root.startHowdy()
+       }
+     }
+ 
+@@ -352,6 +385,20 @@
+       if (root.lockRequested && root.fingerprintConfigured) fingerprintRetryTimer.restart()
+     }
+   }
++  PamContext {
++    id: howdyPam
++    config: "omarchy-lock-howdy"
++    user: root.userName
++
++    onCompleted: function(result) {
++      root.handleHowdyFinished(result)
++    }
++
++    onError: function(error) {
++      root.howdyAuthenticating = false
++      if (root.lockRequested && root.howdyConfigured) howdyRetryTimer.restart()
++    }
++  }
+ 
+   Timer {
+     id: fingerprintRetryTimer
+@@ -359,6 +406,12 @@
+     repeat: false
+     onTriggered: root.startFingerprint()
+   }
++  Timer {
++    id: howdyRetryTimer
++    interval: 250
++    repeat: false
++    onTriggered: root.startHowdy()
++  }
+ 
+   Process {
+     id: readlinkProc
+@@ -385,6 +438,16 @@
+       else if (!root.fingerprintConfigured && fingerprintPam.active) fingerprintPam.abort()
+     }
+   }
++  Process {
++    id: howdyCheckProc
++    command: ["bash", "-c", "if [[ -f /etc/pam.d/omarchy-lock-howdy ]] && command -v howdy >/dev/null 2>&1; then echo yes; else echo no; fi"]
++    stdout: StdioCollector { id: howdyCheckStdout; waitForEnd: true }
++    onExited: {
++      root.howdyConfigured = String(howdyCheckStdout.text || "").trim() === "yes"
++      if (root.lockRequested && root.howdyConfigured) root.startHowdy()
++      else if (!root.howdyConfigured && howdyPam.active) howdyPam.abort()
++    }
++  }
+ 
+   Process {
+     id: strandedLockCheckProc
+@@ -504,6 +567,7 @@
+   Component.onCompleted: {
+     refreshBackground()
+     refreshFingerprintStatus()
++    refreshHowdyStatus()
+     checkStrandedLock()
+   }
+ 
+@@ -530,15 +594,22 @@
+         realScreens: root.realScreenCount(),
+         passwordPam: root.passwordPamConfigured,
+         fingerprint: root.fingerprintConfigured,
++        howdy: root.howdyConfigured,
+         authenticating: root.authenticating,
+         lastEvent: root.lastEvent,
+         lastEventAt: root.lastEventAt
+       })
+     }
+ 
++    function howdyRetry(): string {
++      if (root.howdyConfigured) root.startHowdy()
++      return root.howdyConfigured ? "triggered" : "not-configured"
++    }
++
+     function preview(): string {
+       root.refreshBackground()
+       root.refreshFingerprintStatus()
++      root.refreshHowdyStatus()
+       root.previewVisible = true
+       return "ok"
+     }

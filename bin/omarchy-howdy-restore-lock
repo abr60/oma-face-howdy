@@ -1,0 +1,75 @@
+#!/bin/bash
+#
+# face.howdy:restore-lock — revert the lock screen back to stock omarchy.lock.
+#
+# Unprivileged (edits only ~/.config). Removes the Howdy-patched clone from the
+# shell.json plugins array, clears disabledPlugins/cloneSourceRestores entries
+# for omarchy.lock and the clone, and strips the lid-switch hypr bind added by
+# deploy-lock. The stock omarchy.lock then becomes the active lock screen again.
+
+set -euo pipefail
+
+SHELL_JSON="${FACE_HOWDY_SHELL_JSON:-$HOME/.config/omarchy/shell.json}"
+STATE_DIR="${FACE_HOWDY_STATE_DIR:-$HOME/.local/state/face.howdy}"
+
+err() { echo "ERROR: $1" >&2; }
+msg() { echo "$1"; }
+
+LOCK_ID=""
+if [[ -f "$STATE_DIR/active-lock-id" ]]; then
+  LOCK_ID="$(cat "$STATE_DIR/active-lock-id")"
+fi
+[[ -n "$LOCK_ID" ]] || LOCK_ID="$(id -un).lock"
+
+if [[ -f "$SHELL_JSON" ]]; then
+  python3 - "$SHELL_JSON" "$LOCK_ID" <<'PY'
+import json,sys
+path,lock_id=sys.argv[1],sys.argv[2]
+with open(path) as f:
+    d=json.load(f)
+
+def strip_id(seq, target):
+    out=[]
+    for p in seq:
+        pid=p["id"] if isinstance(p,dict) else p
+        if pid != target:
+            out.append(p)
+    return out
+
+d["plugins"]=strip_id(d.get("plugins",[]), lock_id)
+d["disabledPlugins"]=[p for p in d.get("disabledPlugins",[]) if p!="omarchy.lock"]
+d["cloneSourceRestores"]=[p for p in d.get("cloneSourceRestores",[]) if p!=lock_id]
+
+with open(path,"w") as f:
+    json.dump(d,f,indent=2)
+    f.write("\n")
+print(f"Restored stock omarchy.lock as active lock; removed {lock_id}.")
+PY
+fi
+
+# Strip the lid-switch bind added by deploy-lock (marker-guarded).
+HYPR_BIND="$(printf '%s' "$HOME/.config/hypr/bindings.lua")"
+if [[ -f "$HYPR_BIND" ]]; then
+  python3 - "$HYPR_BIND" <<'PY'
+import sys
+path=sys.argv[1]
+lines=open(path).read().splitlines()
+out=[]; skip=False
+for ln in lines:
+    if ln.strip().startswith("-- face.howdy: lid-open"):
+        skip=True
+        continue
+    if skip and ("omarchy-shell lock howdyRetry" in ln):
+        continue
+    skip=False
+    out.append(ln)
+open(path,"w").write("\n".join(out)+"\n")
+PY
+  hyprctl reload >/dev/null 2>&1 || true
+fi
+
+rm -f "$STATE_DIR/deployed"
+rm -f "$STATE_DIR/active-lock-id"
+
+msg "Stock lock screen restored. Run 'omarchy restart shell' to activate."
+exit 0

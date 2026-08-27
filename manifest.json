@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "face.howdy",
+  "name": "Face Howdy",
+  "version": "1.0.0",
+  "author": "abr60",
+  "description": "Howdy face-recognition unlock for sudo, login, and the lock screen, with an Omarchy-native setup wizard.",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

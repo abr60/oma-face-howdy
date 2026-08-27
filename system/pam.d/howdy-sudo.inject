@@ -1,0 +1,6 @@
+# PAM lines injectable into /etc/pam.d/sudo by face.howdy.
+# Used as a reference by the setup-system script (which injects idempotently).
+# The IR emitter pam_exec line must precede pam_howdy so the IR LEDs fire
+# before Howdy samples the camera.
+auth optional pam_exec.so /usr/bin/env HOME=/root /usr/bin/linux-enable-ir-emitter run
+auth sufficient pam_howdy.so

@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+# face.howdy:status — report current Howdy setup state as key=value lines.
+#
+# Unprivileged. The GUI parses this to render its status screen.
+
+set -euo pipefail
+
+howdy_pkg()   { pacman -Q howdy-next-git &>/dev/null && echo yes || echo no; }
+leire_pkg()   { pacman -Q linux-enable-ir-emitter-git &>/dev/null && echo yes || echo no; }
+pam_howdy()   { grep -q "pam_howdy" /etc/pam.d/sudo 2>/dev/null && echo yes || echo no; }
+lock_pam()    { [[ -f /etc/pam.d/omarchy-lock-howdy ]] && echo yes || echo no; }
+udev_rule()   { [[ -f /etc/udev/rules.d/99-howdy-ir-emitter.rules ]] && echo yes || echo no; }
+models()      { ls /usr/share/howdy/models/*.onnx &>/dev/null 2>&1 && echo yes || echo no; }
+enrolled()    { ls /etc/howdy/models/*.dat &>/dev/null 2>&1 && echo yes || echo no; }
+lock_active() {
+  local id
+  id="$HOME/.local/state/face.howdy/active-lock-id"
+  [[ -f "$id" ]] && cat "$id" || echo "stock"
+}
+
+echo "howdy_pkg=$(howdy_pkg)"
+echo "leire_pkg=$(leire_pkg)"
+echo "pam_howdy_sudo=$(pam_howdy)"
+echo "lock_pam=$(lock_pam)"
+echo "ir_udev=$(udev_rule)"
+echo "models=$(models)"
+echo "enrolled=$(enrolled)"
+echo "active_lock=$(lock_active)"

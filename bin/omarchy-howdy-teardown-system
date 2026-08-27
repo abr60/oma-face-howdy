@@ -1,0 +1,77 @@
+#!/bin/bash
+#
+# face.howdy:teardown-system — remove Howdy PAM setup and (optionally) packages.
+#
+# Root privileged, self-contained, idempotent. The GUI calls this with:
+#   teardown-system keep-pkgs     Clear PAM + howdy config, KEEP packages/models
+#   teardown-system delete-pkgs   Clear PAM + howdy config/models AND remove packages
+#
+# PAM is ALWAYS cleared so system auth (password) works as before, regardless of
+# the keep/delete choice. Lock-screen clone restore is handled separately by
+# restore-lock (unprivileged, edits shell.json only).
+
+set -euo pipefail
+
+MODE="${1:-keep-pkgs}"
+
+err() { echo "ERROR: $1" >&2; }
+msg() { echo "$1"; }
+
+# --------------------------------------------------------------------------
+# 1. PAM cleanup (always)
+# --------------------------------------------------------------------------
+remove_pam_howdy() {
+  local pam_file="$1" label="$2"
+  [[ -f "$pam_file" ]] || return
+  if grep -q "pam_howdy\|linux-enable-ir-emitter" "$pam_file" 2>/dev/null; then
+    sed -i '/pam_howdy\.so/d' "$pam_file" 2>/dev/null || true
+    sed -i '/linux-enable-ir-emitter.*run/d' "$pam_file" 2>/dev/null || true
+    msg "$label: cleared Howdy lines from $pam_file."
+  fi
+}
+
+remove_pam_howdy /etc/pam.d/sudo "sudo"
+remove_pam_howdy /etc/pam.d/sddm "sddm"
+remove_pam_howdy /etc/pam.d/sddm-greeter "sddm-greeter"
+remove_pam_howdy /etc/pam.d/polkit-1 "polkit"
+remove_pam_howdy /etc/pam.d/hyprlock "hyprlock"
+remove_pam_howdy /etc/pam.d/system-auth "system-auth"
+
+if [[ -f /etc/pam.d/omarchy-lock-howdy ]]; then
+  rm -f /etc/pam.d/omarchy-lock-howdy
+  msg "Removed /etc/pam.d/omarchy-lock-howdy."
+fi
+
+# --------------------------------------------------------------------------
+# 2. IR emitter services + udev rule (always)
+# --------------------------------------------------------------------------
+for svc in ir-emitter.service ir-emitter-resume.service; do
+  systemctl disable "$svc" 2>/dev/null || true
+  [[ -f "/etc/systemd/system/$svc" ]] && rm -f "/etc/systemd/system/$svc"
+done
+systemctl disable linux-enable-ir-emitter.service 2>/dev/null || true
+systemctl daemon-reload 2>/dev/null || true
+
+[[ -f /etc/udev/rules.d/99-howdy-ir-emitter.rules ]] && rm -f /etc/udev/rules.d/99-howdy-ir-emitter.rules
+udevadm control --reload-rules 2>/dev/null || true
+
+# --------------------------------------------------------------------------
+# 3. Howdy config + models + packages (mode-dependent)
+# --------------------------------------------------------------------------
+if [[ "$MODE" == "delete-pkgs" ]]; then
+  [[ -d /etc/howdy ]] && rm -rf /etc/howdy
+  if [[ -d /usr/share/howdy/models ]]; then
+    rm -f /usr/share/howdy/models/*.dat 2>/dev/null || true
+  fi
+  msg "Removed /etc/howdy and face models."
+
+  if command -v omarchy-pkg-drop &>/dev/null; then
+    omarchy-pkg-drop howdy-next-git linux-enable-ir-emitter-git 2>/dev/null || true
+  fi
+  pacman -Rns --noconfirm howdy-next-git linux-enable-ir-emitter-git 2>/dev/null || true
+  msg "Removed howdy packages."
+else
+  msg "Kept howdy packages + models (re-enable reuses them instantly)."
+fi
+
+exit 0

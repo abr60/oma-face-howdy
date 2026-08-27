@@ -1,0 +1,155 @@
+#!/bin/bash
+#
+# face.howdy:deploy-lock — enable face unlock on the Omarchy lock screen.
+#
+# Clones the stock omarchy.lock plugin into a per-user lock plugin, applies the
+# bundled Howdy patch to its Service.qml (marker-guarded, idempotent), then
+# swaps shell.json so the patched clone becomes the active lock screen while the
+# stock omarchy.lock is disabled. Stays in sync with Omarchy's latest lock
+# plugin because we clone fresh each time and re-apply the patch onto it.
+#
+# Unprivileged (edits only the user's ~/.config). Root privileges are not
+# required. Idempotent — safe to re-run after an `omarchy update`.
+
+set -euo pipefail
+
+SHELL_JSON="${FACE_HOWDY_SHELL_JSON:-$HOME/.config/omarchy/shell.json}"
+PLUGIN_ROOT="${FACE_HOWDY_PLUGIN_ROOT:-$HOME/.config/omarchy/plugins}"
+STATE_DIR="${FACE_HOWDY_STATE_DIR:-$HOME/.local/state/face.howdy}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PATCH_FILE="$SCRIPT_DIR/../system/lock-howdy.patch"
+
+err() { echo "ERROR: $1" >&2; }
+msg() { echo "$1"; }
+
+mkdir -p "$STATE_DIR"
+
+# --------------------------------------------------------------------------
+# 1. Determine the per-user lock clone id (prefix = username).
+# --------------------------------------------------------------------------
+USER_NAME="$(id -un)"
+LOCK_ID="${USER_NAME}.lock"
+
+# --------------------------------------------------------------------------
+# 2. Clone the stock lock plugin (fresh, so it tracks Omarchy's latest).
+#    If it already exists we refresh its Service.qml/content from stock, but
+#    never clobber a user's own customizations outside our markers.
+# --------------------------------------------------------------------------
+CLONE_DIR="$PLUGIN_ROOT/$LOCK_ID"
+mkdir -p "$PLUGIN_ROOT"
+
+if [[ -d "$CLONE_DIR" ]]; then
+  msg "Lock clone $LOCK_ID exists — reconciling with stock omarchy.lock."
+  # Re-fetch the latest stock Service.qml so our patch applies to current code.
+  STOCK_QML="/usr/share/omarchy/shell/plugins/lock/Service.qml"
+  if [[ -f "$STOCK_QML" ]]; then
+    # Preserve our Howdy markers; refresh the non-marker parts from stock.
+    # Simplest robust approach: restore stock content, then re-apply our patch.
+    cp "$STOCK_QML" "$CLONE_DIR/Service.qml"
+  fi
+else
+  msg "Cloning stock omarchy.lock → $LOCK_ID"
+  # Use the omarchy plugin clone mechanism when available; else a manual clone.
+  if command -v omarchy >/dev/null 2>&1 && omarchy plugin clone omarchy.lock >/dev/null 2>&1; then
+    if [[ -d "$PLUGIN_ROOT/$LOCK_ID" ]]; then
+      CLONE_DIR="$PLUGIN_ROOT/$LOCK_ID"
+    fi
+  else
+    # Manual clone fallback.
+    STOCK_DIR="/usr/share/omarchy/shell/plugins/lock"
+    if [[ -d "$STOCK_DIR" ]]; then
+      cp -r "$STOCK_DIR" "$CLONE_DIR"
+      # Re-id the manifest (username prefix) so it is a per-user plugin.
+      python3 - "$LOCK_ID" <<'PY'
+import json,sys
+id_=sys.argv[1]
+m=json.load(open("manifest.json"))
+m["id"]=id_
+m.setdefault("omarchy",{})["clonedFrom"]="omarchy.lock"
+json.dump(m,open("manifest.json","w"),indent=2)
+print()
+PY
+    else
+      err "Stock lock plugin not found at $STOCK_DIR — cannot clone."
+      exit 1
+    fi
+  fi
+fi
+
+# --------------------------------------------------------------------------
+# 3. Apply the Howdy patch (marker-guarded, idempotent).
+# --------------------------------------------------------------------------
+QML="$CLONE_DIR/Service.qml"
+if [[ ! -f "$QML" ]]; then
+  err "No Service.qml in $CLONE_DIR — cannot patch lock plugin."
+  exit 1
+fi
+
+if grep -qF "property bool howdyConfigured: false" "$QML"; then
+  msg "Lock plugin already patched for Howdy — skipping patch."
+else
+  msg "Applying Howdy lock patch to $QML"
+  patch -f -d "$CLONE_DIR" -p1 < "$PATCH_FILE" >/dev/null 2>&1 || {
+    err "Patch failed. The stock lock plugin may have changed significantly."
+    err "Keep this plugin updated; you can review $PATCH_FILE and re-apply."
+    exit 1
+  }
+  if ! grep -qF "property bool howdyConfigured: false" "$QML"; then
+    err "Patch did not take effect as expected."
+    exit 1
+  fi
+fi
+
+# --------------------------------------------------------------------------
+# 4. Swap shell.json: enable the patched clone, disable stock omarchy.lock.
+# --------------------------------------------------------------------------
+python3 - "$SHELL_JSON" "$LOCK_ID" <<'PY'
+import json,sys
+path,lock_id=sys.argv[1],sys.argv[2]
+with open(path) as f:
+    d=json.load(f)
+
+plugins=d.get("plugins",[])
+disabled=d.get("disabledPlugins",[])
+restores=d.get("cloneSourceRestores",[])
+# Ensure the patched clone is in the plugins array (as an object entry).
+ids=[ (p["id"] if isinstance(p,dict) else p) for p in plugins ]
+if lock_id not in ids:
+    plugins.append({"id": lock_id})
+    d["plugins"]=plugins
+# Disable the stock lock.
+if "omarchy.lock" not in disabled:
+    disabled.append("omarchy.lock")
+    d["disabledPlugins"]=disabled
+# Track the clone so Omarchy can restore it / so we can clean up.
+if lock_id not in restores:
+    restores.append(lock_id)
+    d["cloneSourceRestores"]=restores
+
+with open(path,"w") as f:
+    json.dump(d,f,indent=2)
+    f.write("\n")
+print(f"Active lock = {lock_id}; stock omarchy.lock disabled.")
+PY
+
+# --------------------------------------------------------------------------
+# 5. Persist state for restore, and (optionally) add the lid-switch hypr bind.
+# --------------------------------------------------------------------------
+echo "$LOCK_ID" > "$STATE_DIR/active-lock-id"
+echo "deployed" > "$STATE_DIR/deployed"
+
+# Append the Hyprland lid-switch bind if not already present.
+HYPR_BIND="$(printf '%s' "$HOME/.config/hypr/bindings.lua")"
+if [[ -f "$HYPR_BIND" ]]; then
+  if ! grep -qF "face.howdy: lid-open" "$HYPR_BIND"; then
+    printf '\n-- face.howdy: lid-open face unlock\n' >> "$HYPR_BIND"
+    printf 'o.bind("switch:on:Lid Switch", "Howdy Lid Open", "omarchy-shell lock howdyRetry")\n' >> "$HYPR_BIND"
+    printf 'o.bind("switch:off:Lid Switch", "Howdy Lid Close", "omarchy-shell lock howdyRetry")\n' >> "$HYPR_BIND"
+    msg "Added Hyprland lid-switch bind."
+    hyprctl reload >/dev/null 2>&1 || true
+  fi
+fi
+
+msg "Lock screen face unlock deployed (id=$LOCK_ID)."
+msg "Restart the shell (omarchy restart shell) to activate."
+exit 0
