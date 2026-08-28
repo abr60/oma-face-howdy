@@ -429,23 +429,50 @@ Item {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
 
-    // Scrim
+    // Atmospheric backdrop.
     Rectangle {
       anchors.fill: parent
       color: root.scrim
     }
-    MouseArea { anchors.fill: parent; onClicked: root.dismiss() }
 
-    // Card
+    // Subtle accent bloom behind the card. Deliberately lightweight:
+    // no ShaderEffect or blur dependency.
+    Rectangle {
+      anchors.centerIn: parent
+      width: root.cardW + Style.space(110)
+      height: root.cardH + Style.space(110)
+      radius: Style.space(42)
+      color: Util.alpha(root.accent, 0.018)
+      opacity: root.opened ? 1 : 0
+      Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      onClicked: root.dismiss()
+    }
+
     BorderSurface {
       id: card
       width: root.cardW
       height: root.cardH
-      radius: root.r
+      radius: Style.space(20)
       anchors.centerIn: parent
       color: root.surfaceColor
       borderSpec: Border.surfaceSpec("polkit", "border", root.surfaceBorder, Math.max(1, Style.space(1)))
       padding: root.cm
+
+      // Fine outer edge gives the panel a more premium, layered surface.
+      Rectangle {
+        anchors.fill: parent
+        anchors.margins: Style.space(1)
+        radius: Style.space(19)
+        color: "transparent"
+        border.width: Math.max(1, Style.space(1))
+        border.color: Util.alpha(root.accent, 0.045)
+        z: -1
+      }
+
       MouseArea { anchors.fill: parent; onClicked: {} }
 
       Item {
@@ -456,142 +483,166 @@ Item {
         anchors.bottomMargin: card.contentBottomInset
         anchors.leftMargin: card.contentLeftInset
         focus: true
-        Keys.onPressed: function(event) { if (event.key === Qt.Key_Escape) root.dismiss() }
+        Keys.onPressed: function(event) {
+          if (event.key === Qt.Key_Escape) root.dismiss()
+        }
 
         Column {
           anchors.fill: parent
-          spacing: root.sp
+          spacing: Style.space(16)
 
-          // ------------------------------------------------- header
+          // ============================================================
+          // HEADER
+          // ============================================================
           Item {
             id: hdr
             width: parent.width
-            height: Style.space(48)
+            height: Style.space(50)
 
-            // Icon circle
             Rectangle {
-              id: iconCircle
-              width: Style.space(36)
-              height: Style.space(36)
-              radius: width / 2
+              id: iconTile
+              width: Style.space(42)
+              height: Style.space(42)
+              radius: Style.space(13)
+              anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              color: Util.alpha(root.accent, 0.1)
+              color: Util.alpha(root.accent, 0.085)
               border.width: Math.max(1, Style.space(1))
-              border.color: Util.alpha(root.accent, 0.2)
+              border.color: Util.alpha(root.accent, 0.20)
 
               FaceHowdyIcon {
                 anchors.centerIn: parent
-                iconSize: Style.font.icon
+                iconSize: Style.space(24)
                 color: root.accent
               }
             }
 
-            // Title + subtitle
             Column {
-              anchors.left: iconCircle.right
-              anchors.leftMargin: Style.space(10)
+              anchors.left: iconTile.right
+              anchors.leftMargin: Style.space(12)
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(2)
+
               Text {
                 text: "Face Howdy"
                 color: root.surfaceText
                 font.family: root.ff
-                font.pixelSize: Style.font.body + 1
-                font.bold: true
+                font.pixelSize: Style.font.body + 2
+                font.weight: Font.DemiBold
               }
+
               Text {
-                text: root.statusLoaded ? root.subtitle() : "Reading state…"
+                text: root.statusLoaded ? root.subtitle() : "Reading security state…"
                 color: root.muted
                 font.family: root.ff
                 font.pixelSize: Style.font.caption
               }
             }
 
-            // Status pill — right side, only on status page
             Rectangle {
               visible: root.page === "status" && root.statusLoaded
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              width: pillTxt.implicitWidth + Style.space(20)
-              height: Style.space(22)
+              width: statusText.implicitWidth + Style.space(22)
+              height: Style.space(27)
               radius: height / 2
-              color: {
-                if (root.fullyActive()) return Util.alpha(root.accent, 0.12)
-                if (root.needsAttention()) return Util.alpha(root.warn, 0.12)
-                return Util.alpha(root.muted, 0.08)
-              }
+              color: root.fullyActive()
+                     ? Util.alpha(root.accent, 0.095)
+                     : root.needsAttention()
+                       ? Util.alpha(root.warn, 0.095)
+                       : Util.alpha(root.muted, 0.055)
               border.width: Math.max(1, Style.space(1))
-              border.color: {
-                if (root.fullyActive()) return Util.alpha(root.accent, 0.35)
-                if (root.needsAttention()) return Util.alpha(root.warn, 0.35)
-                return Util.alpha(root.muted, 0.2)
-              }
+              border.color: root.fullyActive()
+                            ? Util.alpha(root.accent, 0.25)
+                            : root.needsAttention()
+                              ? Util.alpha(root.warn, 0.25)
+                              : Util.alpha(root.muted, 0.12)
 
               Row {
                 anchors.centerIn: parent
-                spacing: Style.space(5)
+                spacing: Style.space(7)
+
                 Rectangle {
                   width: Style.space(6)
                   height: Style.space(6)
                   radius: width / 2
                   anchors.verticalCenter: parent.verticalCenter
-                  color: {
-                    if (root.fullyActive()) return root.accent
-                    if (root.needsAttention()) return root.warn
-                    return root.muted
-                  }
+                  color: root.fullyActive()
+                         ? root.accent
+                         : root.needsAttention()
+                           ? root.warn
+                           : root.muted
                 }
+
                 Text {
-                  id: pillTxt
-                  text: root.fullyActive() ? "Active"
-                      : (root.needsAttention() ? "Almost there" : "Not set up")
-                  color: {
-                    if (root.fullyActive()) return root.accent
-                    if (root.needsAttention()) return root.warn
-                    return root.muted
-                  }
+                  id: statusText
+                  text: root.fullyActive()
+                        ? "Protected"
+                        : root.needsAttention()
+                          ? "Attention"
+                          : "Not set up"
+                  color: root.fullyActive()
+                         ? root.accent
+                         : root.needsAttention()
+                           ? root.warn
+                           : root.muted
                   font.family: root.ff
                   font.pixelSize: Style.font.caption - 1
-                  font.bold: true
+                  font.weight: Font.DemiBold
                 }
               }
             }
           }
 
-          // ------------------------------------------------- body
+          // ============================================================
+          // BODY
+          // ============================================================
           Item {
             id: body
             width: parent.width
-            height: parent.height - hdr.height - footerRow.height - root.sp * 3 - Math.max(1, Style.space(1))
+            height: parent.height - hdr.height - footerRow.height - Style.space(16) * 3
 
-            // ---- STATUS page ----
+            // ----------------------------------------------------------
+            // STATUS
+            // ----------------------------------------------------------
             Column {
               visible: root.page === "status"
               anchors.fill: parent
-              spacing: root.sp
+              spacing: Style.space(14)
 
-              // --- Not installed: hero CTA view ---
+              // Empty / not installed hero.
               Column {
                 visible: !root.statusLoaded || (!root.installed() && !root.installing)
                 width: parent.width
-                spacing: root.sp
+                spacing: Style.space(11)
 
                 Item {
                   width: parent.width
-                  height: Style.space(76)
+                  height: Style.space(122)
+
                   Rectangle {
-                    width: Style.space(64)
-                    height: Style.space(64)
+                    width: Style.space(104)
+                    height: Style.space(104)
                     radius: width / 2
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: Util.alpha(root.accent, 0.07)
+                    anchors.centerIn: parent
+                    color: Util.alpha(root.accent, 0.025)
                     border.width: Math.max(1, Style.space(1))
-                    border.color: Util.alpha(root.accent, 0.18)
-                    FaceHowdyIcon {
+                    border.color: Util.alpha(root.accent, 0.12)
+
+                    Rectangle {
+                      width: Style.space(82)
+                      height: Style.space(82)
+                      radius: width / 2
                       anchors.centerIn: parent
-                      iconSize: Style.space(30)
-                      color: root.accent
+                      color: Util.alpha(root.accent, 0.055)
+                      border.width: Math.max(1, Style.space(1))
+                      border.color: Util.alpha(root.accent, 0.20)
+
+                      FaceHowdyIcon {
+                        anchors.centerIn: parent
+                        iconSize: Style.space(38)
+                        color: root.accent
+                      }
                     }
                   }
                 }
@@ -601,110 +652,140 @@ Item {
                   text: "Face unlock for your desktop"
                   color: root.surfaceText
                   font.family: root.ff
-                  font.pixelSize: Style.font.title
-                  font.bold: true
+                  font.pixelSize: Style.font.title + 2
+                  font.weight: Font.DemiBold
                   horizontalAlignment: Text.AlignHCenter
-                }
-                Text {
-                  width: parent.width
-                  text: "Like Windows Hello — unlock sudo, SDDM and your lock screen with your face. Uses your ThinkPad's IR camera."
-                  color: root.muted
-                  font.family: root.ff
-                  font.pixelSize: Style.font.caption
-                  wrapMode: Text.WordWrap
-                  horizontalAlignment: Text.AlignHCenter
-                  lineHeight: 1.5
                 }
 
-                // Feature rows
-                Column {
+                Text {
                   width: parent.width
-                  spacing: Style.space(8)
-                  topPadding: Style.space(4)
+                  text: "Use your IR camera to unlock your desktop authentication flow. Your password remains available as fallback."
+                  color: root.muted
+                  font.family: root.ff
+                  font.pixelSize: Style.font.caption + 1
+                  wrapMode: Text.WordWrap
+                  horizontalAlignment: Text.AlignHCenter
+                  lineHeight: 1.45
+                }
+
+                // Four quiet capability chips.
+                Grid {
+                  width: parent.width
+                  columns: 2
+                  columnSpacing: Style.space(7)
+                  rowSpacing: Style.space(7)
 
                   Repeater {
                     model: [
-                      { i: root.gFingerprint, t: "Wires into sudo, polkit and SDDM" },
-                      { i: root.gNight, t: "Works in the dark via IR emitter" },
-                      { i: root.gKey, t: "Password stays as fallback — always" },
-                      { i: root.gRefresh, t: "Idempotent — safe to re-run after updates" }
+                      { i: root.gFingerprint, t: "sudo + polkit" },
+                      { i: root.gNight, t: "IR in darkness" },
+                      { i: root.gKey, t: "Password fallback" },
+                      { i: root.gRefresh, t: "Safe to re-run" }
                     ]
-                    delegate: Row {
-                      width: parent.width
-                      spacing: Style.space(10)
-                      OpticalGlyph {
-                        text: modelData.i
-                        color: root.muted
-                        fontFamily: root.ff
-                        fontSize: Style.font.body
-                        width: Style.space(18)
-                        anchors.verticalCenter: parent.verticalCenter
-                      }
-                      Text {
-                        text: modelData.t
-                        color: root.muted
-                        font.family: root.ff
-                        font.pixelSize: Style.font.caption
+
+                    delegate: Rectangle {
+                      width: (parent.width - Style.space(7)) / 2
+                      height: Style.space(38)
+                      radius: Style.space(10)
+                      color: Util.alpha(root.muted, 0.028)
+                      border.width: Math.max(1, Style.space(1))
+                      border.color: Util.alpha(root.muted, 0.08)
+
+                      Row {
+                        anchors.fill: parent
+                        anchors.leftMargin: Style.space(10)
+                        spacing: Style.space(8)
+
+                        OpticalGlyph {
+                          text: modelData.i
+                          color: root.accent
+                          fontFamily: root.ff
+                          fontSize: Style.font.caption
+                          width: Style.space(17)
+                          anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Text {
+                          text: modelData.t
+                          color: root.muted
+                          font.family: root.ff
+                          font.pixelSize: Style.font.caption - 1
+                          anchors.verticalCenter: parent.verticalCenter
+                        }
                       }
                     }
                   }
                 }
 
-                // Centered CTA (hidden while status is still loading)
                 Item {
-                  visible: root.statusLoaded
                   width: parent.width
-                  height: Style.space(40)
-                  Button {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Install Face Howdy"
-                    iconText: root.gBolt          // bolt
-                    selected: true
-                    fontFamily: root.ff
-                    onClicked: root.startInstall()
-                  }
+                  height: Style.space(3)
+                }
+
+                Button {
+                  visible: root.statusLoaded
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: "Install Face Howdy"
+                  iconText: root.gBolt
+                  selected: true
+                  fontFamily: root.ff
+                  onClicked: root.startInstall()
                 }
               }
 
-              // --- Needs attention: warning banner + mini cells ---
+              // Attention state.
               Column {
                 visible: root.statusLoaded && root.needsAttention() && !root.installing
                 width: parent.width
-                spacing: root.sp
+                spacing: Style.space(11)
 
                 Rectangle {
                   width: parent.width
-                  height: attnCol.implicitHeight + Style.space(24)
-                  radius: root.r
-                  color: Util.alpha(root.warn, 0.06)
+                  height: attentionColumn.implicitHeight + Style.space(22)
+                  radius: Style.space(13)
+                  color: Util.alpha(root.warn, 0.045)
                   border.width: Math.max(1, Style.space(1))
-                  border.color: Util.alpha(root.warn, 0.28)
-                  clip: true
+                  border.color: Util.alpha(root.warn, 0.20)
 
                   Row {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: parent.left; anchors.leftMargin: Style.space(16)
-                    anchors.right: parent.right; anchors.rightMargin: Style.space(14)
-                    spacing: Style.space(12)
+                    anchors.leftMargin: Style.space(14)
+                    anchors.rightMargin: Style.space(14)
+                    spacing: Style.space(11)
 
-                    OpticalGlyph {
-                      text: root.gAlert            // alert
-                      color: root.warn
-                      fontFamily: root.ff
-                      fontSize: Style.font.iconLarge
+                    Rectangle {
+                      width: Style.space(34)
+                      height: Style.space(34)
+                      radius: Style.space(11)
+                      color: Util.alpha(root.warn, 0.09)
+                      border.width: Math.max(1, Style.space(1))
+                      border.color: Util.alpha(root.warn, 0.18)
                       anchors.verticalCenter: parent.verticalCenter
+
+                      OpticalGlyph {
+                        anchors.centerIn: parent
+                        text: root.gAlert
+                        color: root.warn
+                        fontFamily: root.ff
+                        fontSize: Style.font.body
+                      }
                     }
+
                     Column {
-                      id: attnCol
-                      width: parent.width - Style.space(12) - Style.font.iconLarge
+                      id: attentionColumn
+                      width: parent.width - Style.space(45)
                       spacing: Style.space(3)
+
                       Text {
                         text: "Almost there"
                         color: root.warn
                         font.family: root.ff
                         font.pixelSize: Style.font.body
-                        font.bold: true
+                        font.weight: Font.DemiBold
                       }
+
                       Text {
                         width: parent.width
                         text: root.blockingStep()
@@ -718,15 +799,16 @@ Item {
                   }
                 }
 
-                // Mini cell grid — only noteworthy cells with a bad one flagged
                 Grid {
                   width: parent.width
                   columns: 2
-                  spacing: Style.space(6)
+                  columnSpacing: Style.space(7)
+                  rowSpacing: Style.space(7)
+
                   Repeater {
                     model: root.cellModel
                     delegate: MiniCell {
-                      width: (parent.width - Style.space(6)) / 2
+                      width: (parent.width - Style.space(7)) / 2
                       label: modelData.label
                       good: modelData.okay
                       valueText: modelData.value
@@ -735,139 +817,170 @@ Item {
                 }
               }
 
-              // --- Fully active: protected face-ring hero + chips ---
+              // Fully protected state.
               Column {
                 visible: root.statusLoaded && root.fullyActive() && !root.installing
                 width: parent.width
-                spacing: root.sp
+                spacing: Style.space(11)
 
-                Column {
+                Item {
                   width: parent.width
-                  spacing: Style.space(6)
-                  topPadding: Style.space(2)
+                  height: Style.space(142)
 
-                  Item {
-                    width: parent.width
-                    height: Style.space(84)
+                  Rectangle {
+                    width: Style.space(116)
+                    height: Style.space(116)
+                    radius: width / 2
+                    anchors.centerIn: parent
+                    color: Util.alpha(root.accent, 0.018)
+                    border.width: Style.space(2)
+                    border.color: Util.alpha(root.accent, 0.20)
+
                     Rectangle {
-                      width: Style.space(72)
-                      height: Style.space(72)
+                      width: Style.space(94)
+                      height: Style.space(94)
                       radius: width / 2
-                      anchors.horizontalCenter: parent.horizontalCenter
-                      anchors.verticalCenter: parent.verticalCenter
-                      color: Util.alpha(root.accent, 0.08)
-                      border.width: Math.max(2, Style.space(2))
-                      border.color: Util.alpha(root.accent, 0.5)
+                      anchors.centerIn: parent
+                      color: Util.alpha(root.accent, 0.055)
+                      border.width: Math.max(1, Style.space(1))
+                      border.color: Util.alpha(root.accent, 0.34)
+
                       FaceHowdyIcon {
                         anchors.centerIn: parent
-                        iconSize: Style.space(34)
+                        iconSize: Style.space(42)
                         color: root.accent
                       }
                     }
-                  }
-                  Text {
-                    width: parent.width
-                    text: "Running"
-                    color: root.surfaceText
-                    font.family: root.ff
-                    font.pixelSize: Style.font.title
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                  }
-                  Text {
-                    width: parent.width
-                    text: "Face unlock is active across sudo, polkit and your lock screen"
-                    color: root.muted
-                    font.family: root.ff
-                    font.pixelSize: Style.font.caption
-                    wrapMode: Text.WordWrap
-                    horizontalAlignment: Text.AlignHCenter
-                    lineHeight: 1.5
+
+                    Rectangle {
+                      width: Style.space(12)
+                      height: Style.space(12)
+                      radius: width / 2
+                      anchors.right: parent.right
+                      anchors.bottom: parent.bottom
+                      anchors.rightMargin: Style.space(11)
+                      anchors.bottomMargin: Style.space(12)
+                      color: root.accent
+                      border.width: Style.space(3)
+                      border.color: root.surfaceColor
+                    }
                   }
                 }
 
-                // Chip strip
+                Text {
+                  width: parent.width
+                  text: "You're protected."
+                  color: root.surfaceText
+                  font.family: root.ff
+                  font.pixelSize: Style.font.title + 3
+                  font.weight: Font.DemiBold
+                  horizontalAlignment: Text.AlignHCenter
+                }
+
+                Text {
+                  width: parent.width
+                  text: "Face recognition is active across your desktop authentication stack."
+                  color: root.muted
+                  font.family: root.ff
+                  font.pixelSize: Style.font.caption + 1
+                  wrapMode: Text.WordWrap
+                  horizontalAlignment: Text.AlignHCenter
+                  lineHeight: 1.45
+                }
+
                 Flow {
                   width: parent.width
                   spacing: Style.space(6)
+
                   Repeater {
                     model: root.chips()
                     delegate: Rectangle {
-                      height: Style.space(24)
-                      width: chipRow.implicitWidth + Style.space(14)
+                      height: Style.space(27)
+                      width: chipRow.implicitWidth + Style.space(16)
                       radius: height / 2
-                      color: Util.alpha(root.accent, 0.07)
+                      color: Util.alpha(root.accent, 0.045)
                       border.width: Math.max(1, Style.space(1))
-                      border.color: Util.alpha(root.accent, 0.25)
+                      border.color: Util.alpha(root.accent, 0.15)
+
                       Row {
                         id: chipRow
                         anchors.centerIn: parent
                         spacing: Style.space(5)
+
                         OpticalGlyph {
-                          text: root.gCheck         // check
+                          text: root.gCheck
                           color: root.accent
                           fontFamily: root.ff
-                          fontSize: Style.font.caption
+                          fontSize: Style.font.caption - 1
                         }
+
                         Text {
                           text: modelData.label
                           color: root.muted
                           font.family: root.ff
-                          font.pixelSize: Style.font.caption
-                          font.bold: true
+                          font.pixelSize: Style.font.caption - 1
+                          font.weight: Font.DemiBold
                         }
                       }
                     }
                   }
                 }
 
-                // Details link
-                Item {
-                  width: parent.width
-                  height: Style.space(26)
-                  Button {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Status details"
-                    iconText: root.gChevron          // chevron-right
-                    bordered: true
-                    fontFamily: root.ff
-                    onClicked: root.page = "details"
-                  }
+                Item { width: parent.width; height: Style.space(2) }
+
+                Button {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: "View security status"
+                  iconText: root.gChevron
+                  bordered: true
+                  fontFamily: root.ff
+                  onClicked: root.page = "details"
                 }
               }
             }
 
-            // ---- DETAILS page ----
+            // ----------------------------------------------------------
+            // DETAILS
+            // ----------------------------------------------------------
             Column {
               visible: root.page === "details"
               anchors.fill: parent
-              spacing: root.sp
+              spacing: Style.space(12)
 
               Text {
-                text: "Status details"
+                text: "Security status"
                 color: root.surfaceText
                 font.family: root.ff
-                font.pixelSize: Style.font.title
-                font.bold: true
+                font.pixelSize: Style.font.title + 2
+                font.weight: Font.DemiBold
               }
+
               Text {
                 width: parent.width
-                text: "Everything Face Howdy manages — accent means active, gray means not set."
+                text: "A complete view of the components managed by Face Howdy."
                 color: root.muted
                 font.family: root.ff
-                font.pixelSize: Style.font.caption
+                font.pixelSize: Style.font.caption + 1
                 wrapMode: Text.WordWrap
                 lineHeight: 1.45
+              }
+
+              Rectangle {
+                width: parent.width
+                height: Style.space(1)
+                color: Util.alpha(root.muted, 0.08)
               }
 
               Grid {
                 width: parent.width
                 columns: 2
-                spacing: Style.space(6)
+                columnSpacing: Style.space(7)
+                rowSpacing: Style.space(7)
+
                 Repeater {
                   model: root.cellModel
                   delegate: MiniCell {
-                    width: (parent.width - Style.space(6)) / 2
+                    width: (parent.width - Style.space(7)) / 2
                     label: modelData.label
                     good: modelData.okay
                     valueText: modelData.value
@@ -876,160 +989,178 @@ Item {
               }
             }
 
-            // ---- INSTALL page ----
+            // ----------------------------------------------------------
+            // INSTALLATION
+            // ----------------------------------------------------------
             Column {
               visible: root.page === "install"
               anchors.fill: parent
-              spacing: root.sp
+              spacing: Style.space(11)
 
-              // Phase header: label + %
               Row {
                 width: parent.width
+
                 Text {
-                  id: labelPct
-                  text: root.progressLabel === "done" ? "All done" : root.phaseLabel(root.progressLabel)
+                  id: installTitle
+                  text: root.installComplete ? "Setup complete" : "Setting things up…"
                   color: root.surfaceText
                   font.family: root.ff
-                  font.pixelSize: Style.font.body
-                  font.bold: true
+                  font.pixelSize: Style.font.title + 1
+                  font.weight: Font.DemiBold
                 }
-                Item { width: parent.width - labelPct.implicitWidth - pctTxt.implicitWidth; height: 1 }
+
+                Item {
+                  width: parent.width - installTitle.implicitWidth - installPercent.implicitWidth
+                  height: 1
+                }
+
                 Text {
-                  id: pctTxt
+                  id: installPercent
                   text: Math.round(root.installProgress() * 100) + "%"
                   color: root.accent
                   font.family: root.ff
                   font.pixelSize: Style.font.body
-                  font.bold: true
+                  font.weight: Font.DemiBold
                 }
               }
 
-              // Progress bar
               Rectangle {
                 width: parent.width
-                height: Style.space(4)
-                radius: Style.space(2)
-                color: Util.alpha(root.accent, 0.1)
+                height: Style.space(6)
+                radius: height / 2
+                color: Util.alpha(root.accent, 0.075)
+
                 Rectangle {
                   width: parent.width * root.installProgress()
                   height: parent.height
                   radius: parent.radius
                   color: root.accent
-                  Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                  Behavior on width {
+                    NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+                  }
                 }
               }
 
-              // Phase list
+              Text {
+                width: parent.width
+                text: root.phaseLabel(root.progressLabel)
+                color: root.muted
+                font.family: root.ff
+                font.pixelSize: Style.font.caption
+              }
+
               Column {
                 width: parent.width
-                spacing: Style.space(4)
+                spacing: Style.space(5)
 
                 Repeater {
                   model: ["packages", "ir", "models", "pam"]
+
                   delegate: Item {
                     width: parent.width
-                    height: Style.space(34)
+                    height: Style.space(40)
+
                     property int idx: index
                     property int cur: root.phaseIndex()
                     property bool isDone: idx < cur || root.installComplete
                     property bool isActive: idx === cur && root.installing
-                    property bool isPending: idx > cur && !root.installComplete
 
                     Rectangle {
                       anchors.fill: parent
-                      radius: root.r
-                      color: {
-                        if (isDone) return Util.alpha(root.accent, 0.07)
-                        if (isActive) return Util.alpha(root.accent, 0.12)
-                        return Util.alpha(root.muted, 0.04)
-                      }
+                      radius: Style.space(11)
+                      color: isActive
+                             ? Util.alpha(root.accent, 0.075)
+                             : isDone
+                               ? Util.alpha(root.accent, 0.032)
+                               : Util.alpha(root.muted, 0.022)
                       border.width: Math.max(1, Style.space(1))
-                      border.color: {
-                        if (isDone) return Util.alpha(root.accent, 0.2)
-                        if (isActive) return Util.alpha(root.accent, 0.35)
-                        return Util.alpha(root.muted, 0.1)
-                      }
+                      border.color: isActive
+                                    ? Util.alpha(root.accent, 0.22)
+                                    : isDone
+                                      ? Util.alpha(root.accent, 0.10)
+                                      : Util.alpha(root.muted, 0.07)
+                    }
 
-                      Row {
-                        anchors.fill: parent
-                        anchors.leftMargin: Style.space(12)
-                        anchors.rightMargin: Style.space(12)
-                        spacing: Style.space(10)
+                    Rectangle {
+                      width: Style.space(25)
+                      height: Style.space(25)
+                      radius: width / 2
+                      anchors.left: parent.left
+                      anchors.leftMargin: Style.space(9)
+                      anchors.verticalCenter: parent.verticalCenter
+                      color: isDone || isActive
+                             ? Util.alpha(root.accent, 0.10)
+                             : Util.alpha(root.muted, 0.045)
+                      border.width: Math.max(1, Style.space(1))
+                      border.color: isDone || isActive
+                                    ? Util.alpha(root.accent, 0.25)
+                                    : Util.alpha(root.muted, 0.10)
 
-                        // State icon
-                        Item {
-                          width: Style.space(18)
-                          height: parent.height
-                          OpticalGlyph {
-                            anchors.centerIn: parent
-                            text: isDone ? root.gCheckCircle            // check-circle
-                               : isActive ? root.gLoading           // loading
-                               : root.gPending                      // md-dots_horizontal_circle_outline
-                            color: isDone || isActive ? root.accent : root.muted
-                            fontFamily: root.ff
-                            fontSize: Style.font.iconSmall
-                            rotation: isActive ? 90 : 0
-                            transformOrigin: Item.Center
-                            RotationAnimation on rotation {
-                              from: 0
-                              to: 360
-                              duration: 1000
-                              loops: Animation.Infinite
-                              running: isActive
-                            }
-                          }
-                        }
+                      OpticalGlyph {
+                        anchors.centerIn: parent
+                        text: isDone ? root.gCheckCircle : isActive ? root.gLoading : root.gPending
+                        color: isDone || isActive ? root.accent : root.muted
+                        fontFamily: root.ff
+                        fontSize: Style.font.caption
 
-                        Text {
-                          anchors.verticalCenter: parent.verticalCenter
-                          text: root.phaseLabel(modelData)
-                          color: {
-                            if (isDone || isActive) return root.surfaceText
-                            return root.muted
-                          }
-                          font.family: root.ff
-                          font.pixelSize: Style.font.body
-                          font.bold: isActive
+                        RotationAnimation on rotation {
+                          from: 0
+                          to: 360
+                          duration: 1000
+                          loops: Animation.Infinite
+                          running: isActive
                         }
                       }
+                    }
+
+                    Text {
+                      anchors.left: parent.left
+                      anchors.leftMargin: Style.space(45)
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: root.phaseLabel(modelData)
+                      color: isDone || isActive ? root.surfaceText : root.muted
+                      font.family: root.ff
+                      font.pixelSize: Style.font.body
+                      font.weight: isActive ? Font.DemiBold : Font.Normal
                     }
                   }
                 }
               }
 
-              // Quote
               Rectangle {
                 id: quoteBox
                 width: parent.width
-                height: quoteCol.implicitHeight + Style.space(16)
-                radius: Style.space(6)
-                color: Util.alpha(root.accent, 0.05)
+                height: quoteText.implicitHeight + Style.space(18)
+                radius: Style.space(11)
+                color: Util.alpha(root.accent, 0.032)
                 border.width: Math.max(1, Style.space(1))
-                border.color: Util.alpha(root.accent, 0.15)
+                border.color: Util.alpha(root.accent, 0.10)
                 visible: root.installing
+
                 Text {
-                  id: quoteCol
+                  id: quoteText
+                  anchors.left: parent.left
+                  anchors.right: parent.right
                   anchors.verticalCenter: parent.verticalCenter
-                  anchors.left: parent.left; anchors.leftMargin: Style.space(12)
-                  anchors.right: parent.right; anchors.rightMargin: Style.space(12)
-                  text: "\u201c" + root.currentQuote + "\u201d"
+                  anchors.leftMargin: Style.space(12)
+                  anchors.rightMargin: Style.space(12)
+                  text: "“" + root.currentQuote + "”"
                   color: root.muted
                   font.family: root.ff
                   font.pixelSize: Style.font.caption
                   font.italic: true
                   wrapMode: Text.WordWrap
-                  lineHeight: 1.4
+                  lineHeight: 1.35
                 }
               }
 
-              // Log
               Rectangle {
                 width: parent.width
-                height: Math.max(Style.space(110), body.height - quoteBox.height - Style.space(250))
-                radius: root.r
-                color: Util.alpha(Color.background, 0.6)
+                height: Math.max(Style.space(96), body.height - quoteBox.height - Style.space(208))
+                radius: Style.space(11)
+                color: Util.alpha(Color.background, 0.45)
                 border.width: Math.max(1, Style.space(1))
-                border.color: Util.alpha(root.muted, 0.12)
+                border.color: Util.alpha(root.muted, 0.09)
                 clip: true
 
                 Flickable {
@@ -1043,17 +1174,16 @@ Item {
                   Text {
                     id: logTxt
                     width: parent.width
-                    text: root.logText || "—"
-                    color: Util.alpha(root.muted, 0.9)
+                    text: root.logText || "Waiting for output…"
+                    color: Util.alpha(root.muted, 0.88)
                     font.family: "monospace"
                     font.pixelSize: Style.font.caption - 1
                     wrapMode: Text.Wrap
-                    lineHeight: 1.5
+                    lineHeight: 1.45
                   }
                 }
               }
 
-              // Complete message
               Text {
                 visible: root.installComplete
                 width: parent.width
@@ -1061,299 +1191,413 @@ Item {
                 color: root.accent
                 font.family: root.ff
                 font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
               }
             }
 
-            // ---- CONFIRM page ----
+            // ----------------------------------------------------------
+            // CONFIRM PAM
+            // ----------------------------------------------------------
             Column {
               visible: root.page === "confirm"
               anchors.fill: parent
-              spacing: root.sp
+              spacing: Style.space(14)
+
+              Item {
+                width: parent.width
+                height: Style.space(76)
+
+                Rectangle {
+                  width: Style.space(60)
+                  height: Style.space(60)
+                  radius: Style.space(18)
+                  anchors.centerIn: parent
+                  color: Util.alpha(root.accent, 0.065)
+                  border.width: Math.max(1, Style.space(1))
+                  border.color: Util.alpha(root.accent, 0.17)
+
+                  OpticalGlyph {
+                    anchors.centerIn: parent
+                    text: root.gTune
+                    color: root.accent
+                    fontFamily: root.ff
+                    fontSize: Style.space(28)
+                  }
+                }
+              }
 
               Text {
-                text: "Deploy PAM?"
+                width: parent.width
+                text: "Enable system authentication"
                 color: root.surfaceText
                 font.family: root.ff
-                font.pixelSize: Style.font.title
-                font.bold: true
+                font.pixelSize: Style.font.title + 2
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+              }
+
+              Text {
+                width: parent.width
+                text: "Connect face recognition to sudo, SDDM, polkit and the lock screen."
+                color: root.muted
+                font.family: root.ff
+                font.pixelSize: Style.font.caption + 1
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                lineHeight: 1.45
               }
 
               Rectangle {
                 width: parent.width
-                height: confirmTxt.implicitHeight + Style.space(24)
-                radius: root.r
-                color: Util.alpha(root.accent, 0.05)
+                height: confirmText.implicitHeight + Style.space(28)
+                radius: Style.space(13)
+                color: Util.alpha(root.accent, 0.038)
                 border.width: Math.max(1, Style.space(1))
-                border.color: Util.alpha(root.accent, 0.15)
-                clip: true
+                border.color: Util.alpha(root.accent, 0.12)
 
                 Rectangle {
-                  anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
                   width: Style.space(3)
+                  anchors.left: parent.left
+                  anchors.top: parent.top
+                  anchors.bottom: parent.bottom
                   color: root.accent
                 }
 
-                Row {
+                Text {
+                  id: confirmText
+                  anchors.left: parent.left
+                  anchors.right: parent.right
                   anchors.verticalCenter: parent.verticalCenter
-                  anchors.left: parent.left; anchors.leftMargin: Style.space(16)
-                  anchors.right: parent.right; anchors.rightMargin: Style.space(16)
-                  spacing: Style.space(12)
-                  OpticalGlyph {
-                    text: root.gTune             // md-tune (PAM wiring config)
-                    color: root.accent
-                    fontFamily: root.ff
-                    fontSize: Style.font.iconLarge
-                    anchors.verticalCenter: parent.verticalCenter
-                  }
-                  Text {
-                    id: confirmTxt
-                    width: parent.width - Style.font.iconLarge - Style.space(12)
-                    text: "Adds a pam_howdy line to sudo, SDDM and polkit. Patches your lock screen to unlock by face on lid open. Password stays as fallback."
-                    color: root.surfaceText
-                    font.family: root.ff
-                    font.pixelSize: Style.font.body
-                    wrapMode: Text.WordWrap
-                    lineHeight: 1.45
-                  }
-                }
-              }
-            }
-
-            // ---- REMOVE page ----
-            Column {
-              visible: root.page === "remove"
-              anchors.fill: parent
-              spacing: root.sp
-
-              Column {
-                width: parent.width
-                spacing: Style.space(8)
-                topPadding: Style.space(2)
-
-                Item {
-                  width: parent.width
-                  height: Style.space(56)
-                  OpticalGlyph {
-                    anchors.centerIn: parent
-                    text: root.gDelete             // md-delete_empty (empty bin — removal framing)
-                    color: root.urgent
-                    fontFamily: root.ff
-                    fontSize: Style.space(36)
-                  }
-                }
-                Text {
-                  width: parent.width
-                  text: "Remove Face Howdy?"
-                  color: root.urgent
+                  anchors.leftMargin: Style.space(18)
+                  anchors.rightMargin: Style.space(16)
+                  text: "Adds pam_howdy to sudo, SDDM and polkit, and patches your lock screen for face unlock. Password authentication stays available as fallback."
+                  color: root.surfaceText
                   font.family: root.ff
-                  font.pixelSize: Style.font.title
-                  font.bold: true
-                  horizontalAlignment: Text.AlignHCenter
-                }
-                Text {
-                  width: parent.width
-                  text: "PAM lines are always cleared and password auth restored. Choose what to do with the packages."
-                  color: root.muted
-                  font.family: root.ff
-                  font.pixelSize: Style.font.caption
+                  font.pixelSize: Style.font.body
                   wrapMode: Text.WordWrap
-                  horizontalAlignment: Text.AlignHCenter
                   lineHeight: 1.45
                 }
               }
-
-              // Two option cards
-              Column {
-                width: parent.width
-                spacing: Style.space(8)
-
-                // Keep packages
-                Rectangle {
-                  width: parent.width
-                  height: keepCol.implicitHeight + Style.space(24)
-                  radius: root.r
-                  color: Util.alpha(root.muted, 0.04)
-                  border.width: Math.max(1, Style.space(1))
-                  border.color: Util.alpha(root.muted, 0.15)
-
-                  MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.startRemove(true)
-                    hoverEnabled: true
-                    onContainsMouseChanged: parent.color = containsMouse
-                      ? Util.alpha(root.muted, 0.08) : Util.alpha(root.muted, 0.04)
-                  }
-
-                  Row {
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: parent.left; anchors.leftMargin: Style.space(16)
-                    anchors.right: parent.right; anchors.rightMargin: Style.space(16)
-                    spacing: Style.space(12)
-                    OpticalGlyph {
-                      text: root.gCheck            // check
-                      color: root.muted
-                      fontFamily: root.ff
-                      fontSize: Style.font.body
-                      anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Column {
-                      id: keepCol
-                      width: parent.width - Style.font.body - Style.space(12)
-                      spacing: Style.space(3)
-                      Text {
-                        text: "Keep packages"
-                        color: root.surfaceText
-                        font.family: root.ff
-                        font.pixelSize: Style.font.body
-                        font.bold: true
-                      }
-                      Text {
-                        width: parent.width
-                        text: "Clears PAM and the lock patch. Re-enabling later is instant."
-                        color: root.muted
-                        font.family: root.ff
-                        font.pixelSize: Style.font.caption
-                        wrapMode: Text.WordWrap
-                      }
-                    }
-                  }
-                }
-
-                // Delete packages
-                Rectangle {
-                  width: parent.width
-                  height: deleteCol.implicitHeight + Style.space(24)
-                  radius: root.r
-                  color: Util.alpha(root.urgent, 0.05)
-                  border.width: Math.max(1, Style.space(1))
-                  border.color: Util.alpha(root.urgent, 0.2)
-
-                  MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.startRemove(false)
-                    hoverEnabled: true
-                    onContainsMouseChanged: parent.color = containsMouse
-                      ? Util.alpha(root.urgent, 0.1) : Util.alpha(root.urgent, 0.05)
-                  }
-
-                  Row {
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: parent.left; anchors.leftMargin: Style.space(16)
-                    anchors.right: parent.right; anchors.rightMargin: Style.space(16)
-                    spacing: Style.space(12)
-                    OpticalGlyph {
-                      text: root.gTrash            // trash-can
-                      color: root.urgent
-                      fontFamily: root.ff
-                      fontSize: Style.font.body
-                      anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Column {
-                      id: deleteCol
-                      width: parent.width - Style.font.body - Style.space(12)
-                      spacing: Style.space(3)
-                      Text {
-                        text: "Remove everything"
-                        color: root.urgent
-                        font.family: root.ff
-                        font.pixelSize: Style.font.body
-                        font.bold: true
-                      }
-                      Text {
-                        width: parent.width
-                        text: "Uninstalls howdy and IR emitter packages and deletes enrolled face data."
-                        color: root.muted
-                        font.family: root.ff
-                        font.pixelSize: Style.font.caption
-                        wrapMode: Text.WordWrap
-                      }
-                    }
-                  }
-                }
-              }
             }
 
-            // ---- FACELIST page ----
+            // ----------------------------------------------------------
+            // FACE DATA
+            // ----------------------------------------------------------
             Column {
               visible: root.page === "facelist"
               anchors.fill: parent
-              spacing: root.sp
+              spacing: Style.space(12)
 
               Text {
                 text: "Face data"
                 color: root.surfaceText
                 font.family: root.ff
-                font.pixelSize: Style.font.title
-                font.bold: true
+                font.pixelSize: Style.font.title + 2
+                font.weight: Font.DemiBold
               }
 
               Text {
                 width: parent.width
-                text: "Add opens Howdy's terminal UI to enroll. Test runs a recognition check. Clear removes all enrolled faces."
+                text: "Manage the face profiles used by Howdy. Enrollment opens Howdy's terminal interface."
                 color: root.muted
                 font.family: root.ff
-                font.pixelSize: Style.font.caption
+                font.pixelSize: Style.font.caption + 1
                 wrapMode: Text.WordWrap
                 lineHeight: 1.45
               }
+
+              Rectangle {
+                width: parent.width
+                height: Style.space(76)
+                radius: Style.space(13)
+                color: Util.alpha(root.accent, 0.038)
+                border.width: Math.max(1, Style.space(1))
+                border.color: Util.alpha(root.accent, 0.12)
+
+                Row {
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.space(14)
+                  anchors.rightMargin: Style.space(14)
+                  spacing: Style.space(11)
+
+                  Rectangle {
+                    width: Style.space(44)
+                    height: Style.space(44)
+                    radius: Style.space(13)
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Util.alpha(root.accent, 0.075)
+
+                    FaceHowdyIcon {
+                      anchors.centerIn: parent
+                      iconSize: Style.space(24)
+                      color: root.accent
+                    }
+                  }
+
+                  Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(2)
+
+                    Text {
+                      text: root.yes(root.status.enrolled) ? "Face profile enrolled" : "No face profile"
+                      color: root.surfaceText
+                      font.family: root.ff
+                      font.pixelSize: Style.font.body
+                      font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                      text: root.yes(root.status.enrolled) ? "Ready for recognition" : "Add a face to continue"
+                      color: root.muted
+                      font.family: root.ff
+                      font.pixelSize: Style.font.caption
+                    }
+                  }
+                }
+              }
+
+              Item { width: parent.width; height: Style.space(1) }
+
+              Button {
+                width: parent.width
+                text: "Add face"
+                iconText: root.gAccountPlus
+                selected: true
+                fontFamily: root.ff
+                onClicked: root.enrollFace()
+              }
+
+              Button {
+                width: parent.width
+                text: "Test recognition"
+                iconText: root.gEye
+                bordered: true
+                fontFamily: root.ff
+                onClicked: root.testFace()
+              }
+
+              Button {
+                width: parent.width
+                text: "Clear enrolled faces"
+                iconText: root.gAccountRm
+                bordered: true
+                foreground: root.urgent
+                fontFamily: root.ff
+                onClicked: root.removeFace()
+              }
+            }
+
+            // ----------------------------------------------------------
+            // REMOVE
+            // ----------------------------------------------------------
+            Column {
+              visible: root.page === "remove"
+              anchors.fill: parent
+              spacing: Style.space(11)
+
+              Item {
+                width: parent.width
+                height: Style.space(76)
+
+                Rectangle {
+                  width: Style.space(58)
+                  height: Style.space(58)
+                  radius: Style.space(17)
+                  anchors.centerIn: parent
+                  color: Util.alpha(root.urgent, 0.055)
+                  border.width: Math.max(1, Style.space(1))
+                  border.color: Util.alpha(root.urgent, 0.17)
+
+                  OpticalGlyph {
+                    anchors.centerIn: parent
+                    text: root.gDelete
+                    color: root.urgent
+                    fontFamily: root.ff
+                    fontSize: Style.space(27)
+                  }
+                }
+              }
+
+              Text {
+                width: parent.width
+                text: "Remove Face Howdy?"
+                color: root.surfaceText
+                font.family: root.ff
+                font.pixelSize: Style.font.title + 2
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+              }
+
+              Text {
+                width: parent.width
+                text: "PAM lines are cleared and password authentication restored. Choose what to do with the packages."
+                color: root.muted
+                font.family: root.ff
+                font.pixelSize: Style.font.caption + 1
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                lineHeight: 1.45
+              }
+
+              Item { width: parent.width; height: Style.space(2) }
 
               Column {
                 width: parent.width
                 spacing: Style.space(8)
 
-                Button {
-                  text: "Add face"
-                  iconText: root.gAccountPlus          // account-plus
-                  selected: true
+                // Keep packages.
+                Rectangle {
                   width: parent.width
-                  fontFamily: root.ff
-                  onClicked: root.enrollFace()
+                  height: Style.space(76)
+                  radius: Style.space(13)
+                  color: keepMouse.containsMouse ? Util.alpha(root.muted, 0.065) : Util.alpha(root.muted, 0.028)
+                  border.width: Math.max(1, Style.space(1))
+                  border.color: Util.alpha(root.muted, 0.12)
+
+                  Behavior on color { ColorAnimation { duration: 100 } }
+
+                  MouseArea {
+                    id: keepMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.startRemove(true)
+                  }
+
+                  Row {
+                    anchors.fill: parent
+                    anchors.leftMargin: Style.space(14)
+                    anchors.rightMargin: Style.space(14)
+                    spacing: Style.space(11)
+
+                    Rectangle {
+                      width: Style.space(40)
+                      height: Style.space(40)
+                      radius: Style.space(12)
+                      anchors.verticalCenter: parent.verticalCenter
+                      color: Util.alpha(root.muted, 0.055)
+
+                      OpticalGlyph {
+                        anchors.centerIn: parent
+                        text: root.gCheck
+                        color: root.muted
+                        fontFamily: root.ff
+                        fontSize: Style.font.body
+                      }
+                    }
+
+                    Column {
+                      anchors.verticalCenter: parent.verticalCenter
+                      spacing: Style.space(2)
+
+                      Text {
+                        text: "Keep packages"
+                        color: root.surfaceText
+                        font.family: root.ff
+                        font.pixelSize: Style.font.body
+                        font.weight: Font.DemiBold
+                      }
+
+                      Text {
+                        text: "Clear the configuration only."
+                        color: root.muted
+                        font.family: root.ff
+                        font.pixelSize: Style.font.caption
+                      }
+                    }
+                  }
                 }
-                Button {
-                  text: "Test recognition"
-                  iconText: root.gEye          // eye
-                  bordered: true
+
+                // Delete everything.
+                Rectangle {
                   width: parent.width
-                  fontFamily: root.ff
-                  onClicked: root.testFace()
-                }
-                Button {
-                  text: "Clear faces"
-                  iconText: root.gAccountRm          // account-remove
-                  bordered: true
-                  foreground: root.urgent
-                  width: parent.width
-                  fontFamily: root.ff
-                  onClicked: root.removeFace()
+                  height: Style.space(76)
+                  radius: Style.space(13)
+                  color: deleteMouse.containsMouse ? Util.alpha(root.urgent, 0.085) : Util.alpha(root.urgent, 0.040)
+                  border.width: Math.max(1, Style.space(1))
+                  border.color: Util.alpha(root.urgent, 0.16)
+
+                  Behavior on color { ColorAnimation { duration: 100 } }
+
+                  MouseArea {
+                    id: deleteMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.startRemove(false)
+                  }
+
+                  Row {
+                    anchors.fill: parent
+                    anchors.leftMargin: Style.space(14)
+                    anchors.rightMargin: Style.space(14)
+                    spacing: Style.space(11)
+
+                    Rectangle {
+                      width: Style.space(40)
+                      height: Style.space(40)
+                      radius: Style.space(12)
+                      anchors.verticalCenter: parent.verticalCenter
+                      color: Util.alpha(root.urgent, 0.065)
+
+                      OpticalGlyph {
+                        anchors.centerIn: parent
+                        text: root.gTrash
+                        color: root.urgent
+                        fontFamily: root.ff
+                        fontSize: Style.font.body
+                      }
+                    }
+
+                    Column {
+                      anchors.verticalCenter: parent.verticalCenter
+                      spacing: Style.space(2)
+
+                      Text {
+                        text: "Remove everything"
+                        color: root.urgent
+                        font.family: root.ff
+                        font.pixelSize: Style.font.body
+                        font.weight: Font.DemiBold
+                      }
+
+                      Text {
+                        text: "Uninstall packages and delete enrolled face data."
+                        color: root.muted
+                        font.family: root.ff
+                        font.pixelSize: Style.font.caption
+                      }
+                    }
+                  }
                 }
               }
             }
           }
 
-          // ------------------------------------------------- footer
+          // ============================================================
+          // FOOTER
+          // ============================================================
           Row {
             id: footerRow
             width: parent.width
             height: root.btnH
-            spacing: root.sp
+            spacing: Style.space(7)
 
-            // Left: Back or Remove
             Button {
               id: backBtn
               text: "Back"
-              iconText: root.gBack              // arrow-left
+              iconText: root.gBack
               bordered: true
               fontFamily: root.ff
               visible: root.page === "facelist" || root.page === "remove" || root.page === "confirm" || root.page === "details"
               onClicked: root.page = "status"
             }
+
             Button {
               id: removeBtn
               text: "Remove"
-              iconText: root.gTrash              // trash-can
+              iconText: root.gTrash
               bordered: true
               foreground: root.urgent
               fontFamily: root.ff
@@ -1361,36 +1605,36 @@ Item {
               onClicked: root.page = "remove"
             }
 
-            // Spacer — pushes right-side buttons to the right
             Item {
               height: 1
               width: footerRow.width
-                - (backBtn.visible ? backBtn.width + root.sp : 0)
-                - (removeBtn.visible ? removeBtn.width + root.sp : 0)
-                - (deployBtn.visible ? deployBtn.width + root.sp : 0)
-                - (faceDataBtn.visible ? faceDataBtn.width + root.sp : 0)
-                - (primaryBtn.visible ? primaryBtn.width + root.sp : 0)
+                - (backBtn.visible ? backBtn.width + footerRow.spacing : 0)
+                - (removeBtn.visible ? removeBtn.width + footerRow.spacing : 0)
+                - (deployBtn.visible ? deployBtn.width + footerRow.spacing : 0)
+                - (faceDataBtn.visible ? faceDataBtn.width + footerRow.spacing : 0)
+                - (primaryBtn.visible ? primaryBtn.width + footerRow.spacing : 0)
             }
 
-            // Right cluster
             Button {
               id: deployBtn
               text: "Deploy PAM"
-              iconText: root.gTune              // md-tune (PAM wiring config)
+              iconText: root.gTune
               bordered: true
               fontFamily: root.ff
               visible: root.page === "status" && root.installed() && !root.pamDeployed() && !root.installing
               onClicked: root.page = "confirm"
             }
+
             Button {
               id: faceDataBtn
               text: "Face data"
-              iconText: root.gAccount              // account
+              iconText: root.gAccount
               bordered: true
               fontFamily: root.ff
               visible: root.page === "status" && root.installed() && !root.installing
               onClicked: root.page = "facelist"
             }
+
             Button {
               id: primaryBtn
               text: root.primaryLabel()
@@ -1408,44 +1652,40 @@ Item {
 
   // ================================================================ components
 
-  // MiniCell — compact status cell with a check LED and label/value.
   component MiniCell : Rectangle {
     id: mc
     property string label: ""
     property string valueText: ""
     property bool good: false
 
-    height: Math.max(Style.space(38), Style.font.body + Style.space(18))
-    radius: root.r
+    height: Math.max(Style.space(46), Style.font.body + Style.space(18))
+    radius: Style.space(11)
+    color: mc.good ? Util.alpha(root.accent, 0.045) : Util.alpha(root.muted, 0.026)
+    border.width: Math.max(1, Style.space(1))
+    border.color: mc.good ? Util.alpha(root.accent, 0.15) : Util.alpha(root.muted, 0.09)
 
     Behavior on color { ColorAnimation { duration: 120 } }
     Behavior on border.color { ColorAnimation { duration: 120 } }
 
-    color: mc.good ? Util.alpha(root.accent, 0.06) : Util.alpha(root.muted, 0.04)
-    border {
-      width: Math.max(1, Style.space(1))
-      color: mc.good ? Util.alpha(root.accent, 0.2) : Util.alpha(root.muted, 0.12)
-    }
-
     Row {
       anchors.fill: parent
       anchors.leftMargin: Style.space(10)
-      anchors.rightMargin: Style.space(10)
+      anchors.rightMargin: Style.space(9)
       spacing: Style.space(8)
 
-      // LED circle with check
       Rectangle {
-        width: Style.space(20)
-        height: Style.space(20)
+        width: Style.space(21)
+        height: Style.space(21)
         radius: width / 2
         anchors.verticalCenter: parent.verticalCenter
-        color: mc.good ? Util.alpha(root.accent, 0.15) : Util.alpha(root.muted, 0.08)
+        color: mc.good ? Util.alpha(root.accent, 0.12) : Util.alpha(root.muted, 0.055)
         border.width: Math.max(1, Style.space(1))
-        border.color: mc.good ? Util.alpha(root.accent, 0.35) : Util.alpha(root.muted, 0.2)
+        border.color: mc.good ? Util.alpha(root.accent, 0.27) : Util.alpha(root.muted, 0.11)
+
         OpticalGlyph {
           anchors.centerIn: parent
           visible: mc.good
-          text: root.gCheck       // check only in good state — not-set = dim dot only
+          text: root.gCheck
           color: root.accent
           fontFamily: root.ff
           fontSize: Style.font.caption - 2
@@ -1455,18 +1695,20 @@ Item {
       Column {
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.space(1)
+
         Text {
           text: mc.label
           color: root.muted
           font.family: root.ff
           font.pixelSize: Style.font.caption - 2
         }
+
         Text {
           text: mc.valueText
           color: mc.good ? root.surfaceText : root.muted
           font.family: root.ff
           font.pixelSize: Style.font.caption
-          font.bold: mc.good
+          font.weight: mc.good ? Font.DemiBold : Font.Normal
         }
       }
     }
