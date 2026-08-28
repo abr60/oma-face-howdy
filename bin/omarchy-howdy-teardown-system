@@ -22,7 +22,7 @@ msg() { echo "$1"; }
 # --------------------------------------------------------------------------
 remove_pam_howdy() {
   local pam_file="$1" label="$2"
-  [[ -f "$pam_file" ]] || return
+  [[ -f "$pam_file" ]] || return 0
   if grep -q "pam_howdy\|linux-enable-ir-emitter" "$pam_file" 2>/dev/null; then
     sed -i '/pam_howdy\.so/d' "$pam_file" 2>/dev/null || true
     sed -i '/linux-enable-ir-emitter.*run/d' "$pam_file" 2>/dev/null || true
@@ -47,19 +47,19 @@ fi
 # --------------------------------------------------------------------------
 for svc in ir-emitter.service ir-emitter-resume.service; do
   systemctl disable "$svc" 2>/dev/null || true
-  [[ -f "/etc/systemd/system/$svc" ]] && rm -f "/etc/systemd/system/$svc"
+  rm -f "/etc/systemd/system/$svc"   # rm -f is idempotent — no error when absent
 done
 systemctl disable linux-enable-ir-emitter.service 2>/dev/null || true
 systemctl daemon-reload 2>/dev/null || true
 
-[[ -f /etc/udev/rules.d/99-howdy-ir-emitter.rules ]] && rm -f /etc/udev/rules.d/99-howdy-ir-emitter.rules
+rm -f /etc/udev/rules.d/99-howdy-ir-emitter.rules
 udevadm control --reload-rules 2>/dev/null || true
 
 # --------------------------------------------------------------------------
 # 3. Howdy config + models + packages (mode-dependent)
 # --------------------------------------------------------------------------
 if [[ "$MODE" == "delete-pkgs" ]]; then
-  [[ -d /etc/howdy ]] && rm -rf /etc/howdy
+  rm -rf /etc/howdy
   if [[ -d /usr/share/howdy/models ]]; then
     rm -f /usr/share/howdy/models/*.dat 2>/dev/null || true
   fi

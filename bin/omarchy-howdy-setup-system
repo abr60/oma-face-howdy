@@ -46,19 +46,54 @@ phase_packages() {
 
   msg "Installing howdy-next-git and linux-enable-ir-emitter-git (this can take a while)..."
 
-  if [[ -n "${OMARCHY_PKG_AUR_ADD:-}" && -x "${OMARCHY_PKG_AUR_ADD:-}" ]]; then
+  # Under pkexec, AUR helpers (makepkg) refuse to run as root.
+  # pkexec sets PKEXEC_UID to the invoking user's UID — drop to that user for
+  # the build step, then install the resulting .pkg.tar as root via pacman -U.
+  local real_uid="${PKEXEC_UID:-}"
+  local real_user=""
+  if [[ -n "$real_uid" ]]; then
+    real_user=$(getent passwd "$real_uid" 2>/dev/null | cut -d: -f1 || true)
+  fi
+
+  if [[ -n "$real_user" ]]; then
+    msg "Building AUR packages as user '$real_user' (pkexec root cannot build AUR)..."
+    sudo -H -u "#$real_uid" bash -c '
+      set -euo pipefail
+      helper=""
+      for c in yay paru; do command -v "$c" &>/dev/null && helper="$c" && break; done
+      if [[ -z "$helper" ]]; then
+        echo "ERROR: No AUR helper found for user $USER" >&2; exit 1
+      fi
+      "$helper" -S --needed --noconfirm howdy-next-git linux-enable-ir-emitter-git
+    ' || true
+
+    # Install any successfully built packages from the user's yay/paru cache.
+    local user_home="/home/$real_user"
+    for pkg in howdy-next-git linux-enable-ir-emitter-git; do
+      if ! is_installed "$pkg"; then
+        local pkgfile
+        pkgfile=$(find "$user_home/.cache/yay/$pkg" "$user_home/.cache/paru/$pkg" \
+          -maxdepth 1 -name '*.pkg.tar.*' -printf '%T@ %p\n' 2>/dev/null \
+          | sort -rn | head -1 | cut -d' ' -f2-)
+        if [[ -n "${pkgfile:-}" ]]; then
+          msg "Installing $pkg from user cache..."
+          pacman -U --noconfirm "$pkgfile"
+        fi
+      fi
+    done
+  elif [[ -n "${OMARCHY_PKG_AUR_ADD:-}" && -x "${OMARCHY_PKG_AUR_ADD:-}" ]]; then
     "$OMARCHY_PKG_AUR_ADD" howdy-next-git linux-enable-ir-emitter-git
   elif command -v omarchy-pkg-aur-add &>/dev/null; then
     omarchy-pkg-aur-add howdy-next-git linux-enable-ir-emitter-git
   elif command -v yay &>/dev/null; then
     yay -S --needed --noconfirm howdy-next-git linux-enable-ir-emitter-git
   else
-    err "No AUR helper (yay/omarchy-pkg-aur-add) found — cannot install howdy packages."
+    err "No AUR helper (yay/paru/omarchy-pkg-aur-add) found — cannot install howdy packages."
     return 1
   fi
 
   if ! is_installed howdy-next-git || ! is_installed linux-enable-ir-emitter-git; then
-    err "Package install failed."
+    err "Package install failed. Try manually: yay -S howdy-next-git linux-enable-ir-emitter-git"
     return 1
   fi
 
@@ -265,20 +300,27 @@ phase_pam() {
       return
     fi
 
-    # Insert pam_howdy before pam_fprintd if present, else before system-auth.
+    # Insert pam_howdy before the FIRST pam_fprintd or system-auth match.
+    # 0,/addr/ is a GNU sed range that matches from start-of-file to the first
+    # address match only — prevents multi-insert when the pattern repeats
+    # (e.g. sudo includes system-auth 3 times → would otherwise inject 3×).
     if ! grep -q "pam_howdy" "$pam_file" 2>/dev/null; then
       if grep -q "pam_fprintd" "$pam_file" 2>/dev/null; then
-        sed -i "/pam_fprintd\\.so/i auth       sufficient   pam_howdy.so" "$pam_file"
+        sed -i '0,/pam_fprintd\.so/{/pam_fprintd\.so/i auth       sufficient   pam_howdy.so
+}' "$pam_file"
       elif grep -q "system-auth" "$pam_file" 2>/dev/null; then
-        sed -i "/system-auth/i auth       sufficient   pam_howdy.so" "$pam_file"
+        sed -i '0,/system-auth/{/system-auth/i auth       sufficient   pam_howdy.so
+}' "$pam_file"
       else
         sed -i "1i auth       sufficient   pam_howdy.so" "$pam_file"
       fi
     fi
 
     # Ensure the IR emitter pam_exec line sits before howdy/the stack.
+    # 0,/pam_howdy/ — only insert before the FIRST pam_howdy line.
     if ! grep -qF "$LEIRE_BIN run" "$pam_file" 2>/dev/null; then
-      sed -i "/pam_howdy\\.so/i $PAM_EXEC_LINE" "$pam_file"
+      sed -i "0,/pam_howdy/{/pam_howdy/i $PAM_EXEC_LINE
+}" "$pam_file"
     fi
     msg "$label: pam_howdy present."
   }
