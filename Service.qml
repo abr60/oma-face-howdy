@@ -952,10 +952,9 @@ Item {
           }
 
           // ------------------------------------------------------- footer
-          Row {
+          Flow {
             id: footer
             width: parent.width
-            height: root.buttonHeight
             spacing: root.contentSpacing
 
             Button {
