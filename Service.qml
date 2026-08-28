@@ -327,7 +327,7 @@ Item {
   function primaryIcon() {
     if (root.page === "confirm") return "\uf062e"          // md-tune (configuring PAM, not a security action)
     if (!root.installed()) return "\uf0db3"                // bolt
-    return "\uf0709"                                       // md-restart
+    return "\uf04e6"                                       // md-sync (re-enroll = re-sync face data)
   }
   function primaryAction() {
     switch (root.page) {
@@ -595,9 +595,9 @@ Item {
 
                   Repeater {
                     model: [
-                      { i: "\uf06a5", t: "Wires into sudo, polkit and SDDM" },
+                      { i: "\uf0237", t: "Wires into sudo, polkit and SDDM" },
                       { i: "\uf0594", t: "Works in the dark via IR emitter" },
-                      { i: "\uf084",  t: "Password stays as fallback — always" },
+                      { i: "\uf030b", t: "Password stays as fallback — always" },
                       { i: "\uf0450", t: "Idempotent — safe to re-run after updates" }
                     ]
                     delegate: Row {
@@ -1107,7 +1107,7 @@ Item {
                   height: Style.space(56)
                   OpticalGlyph {
                     anchors.centerIn: parent
-                    text: "\uf0a79"             // trash-can (consistent with removal framing)
+                    text: "\uf06cc"             // md-delete_empty (empty bin — removal framing)
                     color: root.urgent
                     fontFamily: root.ff
                     fontSize: Style.space(36)
