@@ -516,7 +516,7 @@ Item {
                 }
                 Text {
                   id: pillTxt
-                  text: root.fullyActive() ? "Protected"
+                  text: root.fullyActive() ? "Active"
                       : (root.needsAttention() ? "Almost there" : "Not set up")
                   color: {
                     if (root.fullyActive()) return root.accent
@@ -599,7 +599,7 @@ Item {
 
                   Repeater {
                     model: [
-                      { i: "\uf099d", t: "Wires into sudo, polkit and SDDM" },
+                      { i: "\uf06cc", t: "Wires into sudo, polkit and SDDM" },
                       { i: "\uf0594", t: "Works in the dark via IR emitter" },
                       { i: "\uf084",  t: "Password stays as fallback — always" },
                       { i: "\uf0450", t: "Idempotent — safe to re-run after updates" }
@@ -744,7 +744,7 @@ Item {
                   }
                   Text {
                     width: parent.width
-                    text: "Protected"
+                    text: "Running"
                     color: root.surfaceText
                     font.family: root.ff
                     font.pixelSize: Style.font.title
