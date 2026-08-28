@@ -47,22 +47,32 @@ print(f"Restored stock omarchy.lock as active lock; removed {lock_id}.")
 PY
 fi
 
-# Strip the lid-switch bind added by deploy-lock (marker-guarded).
+# Strip the binds added by deploy-lock (marker-guarded).
 HYPR_BIND="$(printf '%s' "$HOME/.config/hypr/bindings.lua")"
 if [[ -f "$HYPR_BIND" ]]; then
   python3 - "$HYPR_BIND" <<'PY'
 import sys
 path=sys.argv[1]
+# (marker, line-that-ends-the-block)
+markers = [
+    ("-- face.howdy: lid-open", "omarchy-shell lock howdyRetry"),
+    ("-- face.howdy: super-h",  "omarchy-shell shell toggle face.howdy"),
+]
 lines=open(path).read().splitlines()
-out=[]; skip=False
+out=[]; skip_until=None
 for ln in lines:
-    if ln.strip().startswith("-- face.howdy: lid-open"):
-        skip=True
+    if skip_until is not None:
+        if skip_until in ln:
+            skip_until=None
         continue
-    if skip and ("omarchy-shell lock howdyRetry" in ln):
-        continue
-    skip=False
-    out.append(ln)
+    matched=False
+    for m,term in markers:
+        if ln.strip().startswith(m):
+            skip_until=term
+            matched=True
+            break
+    if not matched:
+        out.append(ln)
 open(path,"w").write("\n".join(out)+"\n")
 PY
   hyprctl reload >/dev/null 2>&1 || true

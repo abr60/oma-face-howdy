@@ -148,6 +148,13 @@ if [[ -f "$HYPR_BIND" ]]; then
     msg "Added Hyprland lid-switch bind."
     hyprctl reload >/dev/null 2>&1 || true
   fi
+  # SUPER+H toggles the Face Howdy overlay (marker-guarded, idempotent).
+  if ! grep -qF "face.howdy: super-h" "$HYPR_BIND"; then
+    printf '\n-- face.howdy: super-h overlay toggle\n' >> "$HYPR_BIND"
+    printf 'o.bind("SUPER + H", "Face Howdy", "omarchy-shell shell toggle face.howdy")\n' >> "$HYPR_BIND"
+    msg "Added Hyprland SUPER+H Face Howdy bind."
+    hyprctl reload >/dev/null 2>&1 || true
+  fi
 fi
 
 msg "Lock screen face unlock deployed (id=$LOCK_ID)."
