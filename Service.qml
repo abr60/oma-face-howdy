@@ -61,6 +61,35 @@ Item {
   readonly property color warn: "#e8a94f"
   readonly property int r: Style.cornerRadius
   property string ff: Style.font.menuFamily
+
+  // ------------------------------------------------------------------ icons
+  // Nerd Font PUA glyphs (UI font = JetBrainsMono Nerd Font, verified with
+  // fontTools against /usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf).
+  // WARNING: QML/JS "\uXXXX" escapes are EXACTLY 4 hex digits, so 5-digit PUA
+  // codepoints (all these are in U+F0000+) MUST come from String.fromCodePoint()
+  // at runtime — a literal "\uf0014" parses as U+F001 + "4" (renders a wrong
+  // FontAwesome glyph + stray digit). Never write these as string literals.
+  readonly property string gFingerprint: String.fromCodePoint(0xF0237) // md-fingerprint
+  readonly property string gNight:      String.fromCodePoint(0xF0594) // md-weather_night (IR/works in dark)
+  readonly property string gKey:        String.fromCodePoint(0xF030B) // md-key_variant (password fallback)
+  readonly property string gRefresh:    String.fromCodePoint(0xF0450) // md-refresh (idempotent)
+  readonly property string gTune:       String.fromCodePoint(0xF062E) // md-tune (PAM wiring)
+  readonly property string gSync:       String.fromCodePoint(0xF04E6) // md-sync (re-enroll)
+  readonly property string gDelete:     String.fromCodePoint(0xF06CC) // md-delete_empty (remove hero)
+  readonly property string gTrash:      String.fromCodePoint(0xF0A79) // md-trash_can (remove actions)
+  readonly property string gBolt:       String.fromCodePoint(0xF0DB3) // md-bolt (install CTA)
+  readonly property string gAlert:      String.fromCodePoint(0xF0026) // md-alert (attention banner)
+  readonly property string gCheck:      String.fromCodePoint(0xF012C) // md-check (good MiniCell)
+  readonly property string gCheckCircle:String.fromCodePoint(0xF05E0) // md-check_circle (done phase)
+  readonly property string gLoading:    String.fromCodePoint(0xF0772) // md-loading (active phase)
+  readonly property string gPending:    String.fromCodePoint(0xF0B8D) // md-dots_horizontal_circle_outline
+  readonly property string gChevron:    String.fromCodePoint(0xF0142) // md-chevron_right (details)
+  readonly property string gAccount:    String.fromCodePoint(0xF0004) // md-account (face data)
+  readonly property string gAccountPlus:String.fromCodePoint(0xF0014) // md-account_plus
+  readonly property string gAccountRm:  String.fromCodePoint(0xF0015) // md-account_remove
+  readonly property string gEye:        String.fromCodePoint(0xF0208) // md-eye (test recognition)
+  readonly property string gBack:       String.fromCodePoint(0xF004D) // md-arrow_left
+
   property int cm: Style.spacing.panelPadding
   property int sp: Style.spacing.md
   property int cardW: Math.min(Style.space(440), panel.width - Style.gapsOut * 2)
@@ -325,9 +354,9 @@ Item {
     return root.page === "install" || root.page === "confirm"
   }
   function primaryIcon() {
-    if (root.page === "confirm") return "\uf062e"          // md-tune (configuring PAM, not a security action)
-    if (!root.installed()) return "\uf0db3"                // bolt
-    return "\uf04e6"                                       // md-sync (re-enroll = re-sync face data)
+    if (root.page === "confirm") return root.gTune         // md-tune (configuring PAM, not a security action)
+    if (!root.installed()) return root.gBolt               // bolt
+    return root.gSync                                      // md-sync (re-enroll = re-sync face data)
   }
   function primaryAction() {
     switch (root.page) {
@@ -595,10 +624,10 @@ Item {
 
                   Repeater {
                     model: [
-                      { i: "\uf0237", t: "Wires into sudo, polkit and SDDM" },
-                      { i: "\uf0594", t: "Works in the dark via IR emitter" },
-                      { i: "\uf030b", t: "Password stays as fallback — always" },
-                      { i: "\uf0450", t: "Idempotent — safe to re-run after updates" }
+                      { i: root.gFingerprint, t: "Wires into sudo, polkit and SDDM" },
+                      { i: root.gNight, t: "Works in the dark via IR emitter" },
+                      { i: root.gKey, t: "Password stays as fallback — always" },
+                      { i: root.gRefresh, t: "Idempotent — safe to re-run after updates" }
                     ]
                     delegate: Row {
                       width: parent.width
@@ -629,7 +658,7 @@ Item {
                   Button {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "Install Face Howdy"
-                    iconText: "\uf0db3"          // bolt
+                    iconText: root.gBolt          // bolt
                     selected: true
                     fontFamily: root.ff
                     onClicked: root.startInstall()
@@ -659,7 +688,7 @@ Item {
                     spacing: Style.space(12)
 
                     OpticalGlyph {
-                      text: "\uf0026"            // alert
+                      text: root.gAlert            // alert
                       color: root.warn
                       fontFamily: root.ff
                       fontSize: Style.font.iconLarge
@@ -775,7 +804,7 @@ Item {
                         anchors.centerIn: parent
                         spacing: Style.space(5)
                         OpticalGlyph {
-                          text: "\uf012c"         // check
+                          text: root.gCheck         // check
                           color: root.accent
                           fontFamily: root.ff
                           fontSize: Style.font.caption
@@ -799,7 +828,7 @@ Item {
                   Button {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "Status details"
-                    iconText: "\uf0142"          // chevron-right
+                    iconText: root.gChevron          // chevron-right
                     bordered: true
                     fontFamily: root.ff
                     onClicked: root.page = "details"
@@ -933,9 +962,9 @@ Item {
                           height: parent.height
                           OpticalGlyph {
                             anchors.centerIn: parent
-                            text: isDone ? "\uf05e0"            // check-circle
-                               : isActive ? "\uf0772"           // loading
-                               : "\uf0b8d"                      // md-dots_horizontal_circle_outline
+                            text: isDone ? root.gCheckCircle            // check-circle
+                               : isActive ? root.gLoading           // loading
+                               : root.gPending                      // md-dots_horizontal_circle_outline
                             color: isDone || isActive ? root.accent : root.muted
                             fontFamily: root.ff
                             fontSize: Style.font.iconSmall
@@ -1071,7 +1100,7 @@ Item {
                   anchors.right: parent.right; anchors.rightMargin: Style.space(16)
                   spacing: Style.space(12)
                   OpticalGlyph {
-                    text: "\uf062e"             // md-tune (PAM wiring config)
+                    text: root.gTune             // md-tune (PAM wiring config)
                     color: root.accent
                     fontFamily: root.ff
                     fontSize: Style.font.iconLarge
@@ -1107,7 +1136,7 @@ Item {
                   height: Style.space(56)
                   OpticalGlyph {
                     anchors.centerIn: parent
-                    text: "\uf06cc"             // md-delete_empty (empty bin — removal framing)
+                    text: root.gDelete             // md-delete_empty (empty bin — removal framing)
                     color: root.urgent
                     fontFamily: root.ff
                     fontSize: Style.space(36)
@@ -1163,7 +1192,7 @@ Item {
                     anchors.right: parent.right; anchors.rightMargin: Style.space(16)
                     spacing: Style.space(12)
                     OpticalGlyph {
-                      text: "\uf012c"            // check
+                      text: root.gCheck            // check
                       color: root.muted
                       fontFamily: root.ff
                       fontSize: Style.font.body
@@ -1216,7 +1245,7 @@ Item {
                     anchors.right: parent.right; anchors.rightMargin: Style.space(16)
                     spacing: Style.space(12)
                     OpticalGlyph {
-                      text: "\uf0a79"            // trash-can
+                      text: root.gTrash            // trash-can
                       color: root.urgent
                       fontFamily: root.ff
                       fontSize: Style.font.body
@@ -1277,7 +1306,7 @@ Item {
 
                 Button {
                   text: "Add face"
-                  iconText: "\uf0014"          // account-plus
+                  iconText: root.gAccountPlus          // account-plus
                   selected: true
                   width: parent.width
                   fontFamily: root.ff
@@ -1285,7 +1314,7 @@ Item {
                 }
                 Button {
                   text: "Test recognition"
-                  iconText: "\uf0208"          // eye
+                  iconText: root.gEye          // eye
                   bordered: true
                   width: parent.width
                   fontFamily: root.ff
@@ -1293,7 +1322,7 @@ Item {
                 }
                 Button {
                   text: "Clear faces"
-                  iconText: "\uf0015"          // account-remove
+                  iconText: root.gAccountRm          // account-remove
                   bordered: true
                   foreground: root.urgent
                   width: parent.width
@@ -1315,7 +1344,7 @@ Item {
             Button {
               id: backBtn
               text: "Back"
-              iconText: "\uf004d"              // arrow-left
+              iconText: root.gBack              // arrow-left
               bordered: true
               fontFamily: root.ff
               visible: root.page === "facelist" || root.page === "remove" || root.page === "confirm" || root.page === "details"
@@ -1324,7 +1353,7 @@ Item {
             Button {
               id: removeBtn
               text: "Remove"
-              iconText: "\uf0a79"              // trash-can
+              iconText: root.gTrash              // trash-can
               bordered: true
               foreground: root.urgent
               fontFamily: root.ff
@@ -1347,7 +1376,7 @@ Item {
             Button {
               id: deployBtn
               text: "Deploy PAM"
-              iconText: "\uf062e"              // md-tune (PAM wiring config)
+              iconText: root.gTune              // md-tune (PAM wiring config)
               bordered: true
               fontFamily: root.ff
               visible: root.page === "status" && root.installed() && !root.pamDeployed() && !root.installing
@@ -1356,7 +1385,7 @@ Item {
             Button {
               id: faceDataBtn
               text: "Face data"
-              iconText: "\uf0004"              // account
+              iconText: root.gAccount              // account
               bordered: true
               fontFamily: root.ff
               visible: root.page === "status" && root.installed() && !root.installing
@@ -1416,7 +1445,7 @@ Item {
         OpticalGlyph {
           anchors.centerIn: parent
           visible: mc.good
-          text: "\uf012c"       // check only in good state — not-set = dim dot only
+          text: root.gCheck       // check only in good state — not-set = dim dot only
           color: root.accent
           fontFamily: root.ff
           fontSize: Style.font.caption - 2
