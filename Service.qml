@@ -327,7 +327,7 @@ Item {
   function primaryIcon() {
     if (root.page === "confirm") return "\uf099d"          // shield-lock
     if (!root.installed()) return "\uf0db3"                // bolt
-    return "\uf0014"                                       // account-plus
+    return "\uf0709"                                       // md-restart
   }
   function primaryAction() {
     switch (root.page) {
@@ -450,12 +450,12 @@ Item {
               border.width: Math.max(1, Style.space(1))
               border.color: Util.alpha(root.accent, 0.2)
 
-              Text {
+              OpticalGlyph {
                 anchors.centerIn: parent
-                text: "\uf0237"          // fingerprint / face-id
+                text: "\uf0c7b"          // md-face_recognition
                 color: root.accent
-                font.family: root.ff
-                font.pixelSize: Style.font.icon
+                fontFamily: root.ff
+                fontSize: Style.font.icon
               }
             }
 
@@ -561,12 +561,12 @@ Item {
                     color: Util.alpha(root.accent, 0.07)
                     border.width: Math.max(1, Style.space(1))
                     border.color: Util.alpha(root.accent, 0.18)
-                    Text {
+                    OpticalGlyph {
                       anchors.centerIn: parent
-                      text: "\uf0237"          // fingerprint
+                      text: "\uf0c7b"          // md-face_recognition
                       color: root.accent
-                      font.family: root.ff
-                      font.pixelSize: Style.space(30)
+                      fontFamily: root.ff
+                      fontSize: Style.space(30)
                     }
                   }
                 }
@@ -599,7 +599,7 @@ Item {
 
                   Repeater {
                     model: [
-                      { i: "\uf06cc", t: "Wires into sudo, polkit and SDDM" },
+                      { i: "\uf0565", t: "Wires into sudo, polkit and SDDM" },
                       { i: "\uf0594", t: "Works in the dark via IR emitter" },
                       { i: "\uf084",  t: "Password stays as fallback — always" },
                       { i: "\uf0450", t: "Idempotent — safe to re-run after updates" }
@@ -607,13 +607,13 @@ Item {
                     delegate: Row {
                       width: parent.width
                       spacing: Style.space(10)
-                      Text {
+                      OpticalGlyph {
                         text: modelData.i
                         color: root.muted
-                        font.family: root.ff
-                        font.pixelSize: Style.font.body
+                        fontFamily: root.ff
+                        fontSize: Style.font.body
                         width: Style.space(18)
-                        horizontalAlignment: Text.AlignHCenter
+                        anchors.verticalCenter: parent.verticalCenter
                       }
                       Text {
                         text: modelData.t
@@ -662,11 +662,11 @@ Item {
                     anchors.right: parent.right; anchors.rightMargin: Style.space(14)
                     spacing: Style.space(12)
 
-                    Text {
+                    OpticalGlyph {
                       text: "\uf0026"            // alert
                       color: root.warn
-                      font.family: root.ff
-                      font.pixelSize: Style.font.iconLarge
+                      fontFamily: root.ff
+                      fontSize: Style.font.iconLarge
                       anchors.verticalCenter: parent.verticalCenter
                     }
                     Column {
@@ -733,12 +733,12 @@ Item {
                       color: Util.alpha(root.accent, 0.08)
                       border.width: Math.max(2, Style.space(2))
                       border.color: Util.alpha(root.accent, 0.5)
-                      Text {
+                      OpticalGlyph {
                         anchors.centerIn: parent
-                        text: "\uf0237"          // fingerprint
+                        text: "\uf0c7b"          // md-face_recognition
                         color: root.accent
-                        font.family: root.ff
-                        font.pixelSize: Style.space(34)
+                        fontFamily: root.ff
+                        fontSize: Style.space(34)
                       }
                     }
                   }
@@ -780,11 +780,11 @@ Item {
                         id: chipRow
                         anchors.centerIn: parent
                         spacing: Style.space(5)
-                        Text {
+                        OpticalGlyph {
                           text: "\uf012c"         // check
                           color: root.accent
-                          font.family: root.ff
-                          font.pixelSize: Style.font.caption
+                          fontFamily: root.ff
+                          fontSize: Style.font.caption
                         }
                         Text {
                           text: modelData.label
@@ -937,14 +937,14 @@ Item {
                         Item {
                           width: Style.space(18)
                           height: parent.height
-                          Text {
+                          OpticalGlyph {
                             anchors.centerIn: parent
                             text: isDone ? "\uf05e0"            // check-circle
                                : isActive ? "\uf0772"           // loading
-                               : "\uf0766"                      // circle-outline
+                               : "\uf0b8d"                      // md-dots_horizontal_circle_outline
                             color: isDone || isActive ? root.accent : root.muted
-                            font.family: root.ff
-                            font.pixelSize: Style.font.iconSmall
+                            fontFamily: root.ff
+                            fontSize: Style.font.iconSmall
                             rotation: isActive ? 90 : 0
                             transformOrigin: Item.Center
                             RotationAnimation on rotation {
@@ -1076,11 +1076,11 @@ Item {
                   anchors.left: parent.left; anchors.leftMargin: Style.space(16)
                   anchors.right: parent.right; anchors.rightMargin: Style.space(16)
                   spacing: Style.space(12)
-                  Text {
+                  OpticalGlyph {
                     text: "\uf099d"             // shield-lock
                     color: root.accent
-                    font.family: root.ff
-                    font.pixelSize: Style.font.iconLarge
+                    fontFamily: root.ff
+                    fontSize: Style.font.iconLarge
                     anchors.verticalCenter: parent.verticalCenter
                   }
                   Text {
@@ -1111,12 +1111,12 @@ Item {
                 Item {
                   width: parent.width
                   height: Style.space(56)
-                  Text {
+                  OpticalGlyph {
                     anchors.centerIn: parent
                     text: "\uf099e"             // shield-off
                     color: root.urgent
-                    font.family: root.ff
-                    font.pixelSize: Style.space(36)
+                    fontFamily: root.ff
+                    fontSize: Style.space(36)
                   }
                 }
                 Text {
@@ -1168,11 +1168,11 @@ Item {
                     anchors.left: parent.left; anchors.leftMargin: Style.space(16)
                     anchors.right: parent.right; anchors.rightMargin: Style.space(16)
                     spacing: Style.space(12)
-                    Text {
+                    OpticalGlyph {
                       text: "\uf012c"            // check
                       color: root.muted
-                      font.family: root.ff
-                      font.pixelSize: Style.font.body
+                      fontFamily: root.ff
+                      fontSize: Style.font.body
                       anchors.verticalCenter: parent.verticalCenter
                     }
                     Column {
@@ -1221,11 +1221,11 @@ Item {
                     anchors.left: parent.left; anchors.leftMargin: Style.space(16)
                     anchors.right: parent.right; anchors.rightMargin: Style.space(16)
                     spacing: Style.space(12)
-                    Text {
+                    OpticalGlyph {
                       text: "\uf0a79"            // trash-can
                       color: root.urgent
-                      font.family: root.ff
-                      font.pixelSize: Style.font.body
+                      fontFamily: root.ff
+                      fontSize: Style.font.body
                       anchors.verticalCenter: parent.verticalCenter
                     }
                     Column {
@@ -1419,13 +1419,12 @@ Item {
         color: mc.good ? Util.alpha(root.accent, 0.15) : Util.alpha(root.muted, 0.08)
         border.width: Math.max(1, Style.space(1))
         border.color: mc.good ? Util.alpha(root.accent, 0.35) : Util.alpha(root.muted, 0.2)
-        Text {
+        OpticalGlyph {
           anchors.centerIn: parent
-          text: "\uf012c"                    // check
-          color: mc.good ? root.accent : root.muted
-          font.family: root.ff
-          font.pixelSize: Style.font.caption - 2
-          font.bold: true
+          text: mc.good ? "\uf012c" : "\uf02fd"       // check : information_outline
+          color: mc.good ? root.accent : root.warn
+          fontFamily: root.ff
+          fontSize: Style.font.caption - 2
         }
       }
 
