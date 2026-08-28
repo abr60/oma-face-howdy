@@ -325,7 +325,7 @@ Item {
     return root.page === "install" || root.page === "confirm"
   }
   function primaryIcon() {
-    if (root.page === "confirm") return "\uf099d"          // shield-lock
+    if (root.page === "confirm") return "\uf062e"          // md-tune (configuring PAM, not a security action)
     if (!root.installed()) return "\uf0db3"                // bolt
     return "\uf0709"                                       // md-restart
   }
@@ -450,12 +450,10 @@ Item {
               border.width: Math.max(1, Style.space(1))
               border.color: Util.alpha(root.accent, 0.2)
 
-              OpticalGlyph {
+              FaceHowdyIcon {
                 anchors.centerIn: parent
-                text: "\uf0c7b"          // md-face_recognition
+                iconSize: Style.font.icon
                 color: root.accent
-                fontFamily: root.ff
-                fontSize: Style.font.icon
               }
             }
 
@@ -561,12 +559,10 @@ Item {
                     color: Util.alpha(root.accent, 0.07)
                     border.width: Math.max(1, Style.space(1))
                     border.color: Util.alpha(root.accent, 0.18)
-                    OpticalGlyph {
+                    FaceHowdyIcon {
                       anchors.centerIn: parent
-                      text: "\uf0c7b"          // md-face_recognition
+                      iconSize: Style.space(30)
                       color: root.accent
-                      fontFamily: root.ff
-                      fontSize: Style.space(30)
                     }
                   }
                 }
@@ -599,7 +595,7 @@ Item {
 
                   Repeater {
                     model: [
-                      { i: "\uf0565", t: "Wires into sudo, polkit and SDDM" },
+                      { i: "\uf06a5", t: "Wires into sudo, polkit and SDDM" },
                       { i: "\uf0594", t: "Works in the dark via IR emitter" },
                       { i: "\uf084",  t: "Password stays as fallback — always" },
                       { i: "\uf0450", t: "Idempotent — safe to re-run after updates" }
@@ -733,12 +729,10 @@ Item {
                       color: Util.alpha(root.accent, 0.08)
                       border.width: Math.max(2, Style.space(2))
                       border.color: Util.alpha(root.accent, 0.5)
-                      OpticalGlyph {
+                      FaceHowdyIcon {
                         anchors.centerIn: parent
-                        text: "\uf0c7b"          // md-face_recognition
+                        iconSize: Style.space(34)
                         color: root.accent
-                        fontFamily: root.ff
-                        fontSize: Style.space(34)
                       }
                     }
                   }
@@ -1077,7 +1071,7 @@ Item {
                   anchors.right: parent.right; anchors.rightMargin: Style.space(16)
                   spacing: Style.space(12)
                   OpticalGlyph {
-                    text: "\uf099d"             // shield-lock
+                    text: "\uf062e"             // md-tune (PAM wiring config)
                     color: root.accent
                     fontFamily: root.ff
                     fontSize: Style.font.iconLarge
@@ -1113,7 +1107,7 @@ Item {
                   height: Style.space(56)
                   OpticalGlyph {
                     anchors.centerIn: parent
-                    text: "\uf099e"             // shield-off
+                    text: "\uf0a79"             // trash-can (consistent with removal framing)
                     color: root.urgent
                     fontFamily: root.ff
                     fontSize: Style.space(36)
@@ -1353,7 +1347,7 @@ Item {
             Button {
               id: deployBtn
               text: "Deploy PAM"
-              iconText: "\uf099d"              // shield-lock
+              iconText: "\uf062e"              // md-tune (PAM wiring config)
               bordered: true
               fontFamily: root.ff
               visible: root.page === "status" && root.installed() && !root.pamDeployed() && !root.installing
@@ -1421,8 +1415,9 @@ Item {
         border.color: mc.good ? Util.alpha(root.accent, 0.35) : Util.alpha(root.muted, 0.2)
         OpticalGlyph {
           anchors.centerIn: parent
-          text: mc.good ? "\uf012c" : "\uf02fd"       // check : information_outline
-          color: mc.good ? root.accent : root.warn
+          visible: mc.good
+          text: "\uf012c"       // check only in good state — not-set = dim dot only
+          color: root.accent
           fontFamily: root.ff
           fontSize: Style.font.caption - 2
         }
