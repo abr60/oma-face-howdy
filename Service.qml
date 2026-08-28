@@ -11,7 +11,9 @@ import qs.Ui
 // configuring the IR emitter, wiring PAM, enrolling a face, and removing
 // everything cleanly. All privileged ops go through pkexec → bundled bin/ scripts.
 //
-// UI adapts to 4 states: not installed / installing / partial (needs attention) / active.
+// UI adapts to 5 states: not installed (hero CTA) / installing (phases) /
+// needs attention (banner) / protected (face-ring hero + chips) / remove.
+// Icons are Nerd Font PUA glyphs (UI font = JetBrainsMono Nerd Font).
 
 Item {
   id: root
@@ -32,7 +34,7 @@ Item {
 
   // ------------------------------------------------------------------ state
   property bool opened: false
-  property string page: "status"       // status | install | confirm | remove | facelist
+  property string page: "status"       // status | install | confirm | remove | facelist | details
   property var status: ({})
   property bool statusLoaded: false
   property var cellModel: []
@@ -54,6 +56,9 @@ Item {
   readonly property color muted: Color.muted
   readonly property color urgent: Color.urgent
   readonly property color scrim: Color.polkit.scrim
+  // Warning amber: the palette has no warning token, so compose a warm one
+  // for "almost there" attention surfaces (mockup: --border-warning family).
+  readonly property color warn: "#e8a94f"
   readonly property int r: Style.cornerRadius
   property string ff: Style.font.menuFamily
   property int cm: Style.spacing.panelPadding
@@ -262,7 +267,7 @@ Item {
   }
   function subtitle() {
     if (!root.statusLoaded) return "Reading state…"
-    if (root.fullyActive()) return "Face unlock is running"
+    if (root.fullyActive()) return "Face unlock is active"
     if (root.needsAttention()) return "One more step needed"
     return "Convenient face unlock for your ThinkPad"
   }
@@ -291,6 +296,18 @@ Item {
     return arr
   }
 
+  // Compact chip strip for the protected state (mockup: status-strip).
+  function chips() {
+    var s = root.status, arr = []
+    function add(label, key) { arr.push({ label: label, okay: root.yes(s[key]) }) }
+    add("Howdy",        "howdy_pkg")
+    add("IR emitter",   "leire_pkg")
+    add("PAM",          "pam_howdy_sudo")
+    add("Lock screen",  "lock_pam")
+    add("Face enrolled","enrolled")
+    return arr
+  }
+
   function installCompleteMsg() {
     if (root.yes(root.status.enrolled)) return "All set up and a face is enrolled."
     return "Ready — enroll a face via Face data → Add."
@@ -304,7 +321,13 @@ Item {
     return "Re-enroll"
   }
   function primaryVisible() {
-    return root.page === "status" || root.page === "install" || root.page === "confirm"
+    if (root.page === "status") return root.installed() && !root.installing
+    return root.page === "install" || root.page === "confirm"
+  }
+  function primaryIcon() {
+    if (root.page === "confirm") return "\uf099d"          // shield-lock
+    if (!root.installed()) return "\uf0db3"                // bolt
+    return "\uf0014"                                       // account-plus
   }
   function primaryAction() {
     switch (root.page) {
@@ -427,13 +450,12 @@ Item {
               border.width: Math.max(1, Style.space(1))
               border.color: Util.alpha(root.accent, 0.2)
 
-              Image {
+              Text {
                 anchors.centerIn: parent
-                width: Style.space(22)
-                height: Style.space(22)
-                source: root.pluginBin ? "file://" + root.pluginBin.replace(/\/bin$/, "") + "/assets/face-howdy.svg" : ""
-                fillMode: Image.PreserveAspectFit
-                smooth: true
+                text: "\uf0237"          // fingerprint / face-id
+                color: root.accent
+                font.family: root.ff
+                font.pixelSize: Style.font.icon
               }
             }
 
@@ -463,42 +485,50 @@ Item {
               visible: root.page === "status" && root.statusLoaded
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              width: pillTxt.implicitWidth + Style.space(18)
+              width: pillTxt.implicitWidth + Style.space(20)
               height: Style.space(22)
               radius: height / 2
               color: {
                 if (root.fullyActive()) return Util.alpha(root.accent, 0.12)
-                if (root.needsAttention()) return Util.alpha(root.urgent, 0.12)
+                if (root.needsAttention()) return Util.alpha(root.warn, 0.12)
                 return Util.alpha(root.muted, 0.08)
               }
               border.width: Math.max(1, Style.space(1))
               border.color: {
                 if (root.fullyActive()) return Util.alpha(root.accent, 0.35)
-                if (root.needsAttention()) return Util.alpha(root.urgent, 0.35)
+                if (root.needsAttention()) return Util.alpha(root.warn, 0.35)
                 return Util.alpha(root.muted, 0.2)
               }
 
-              Text {
-                id: pillTxt
+              Row {
                 anchors.centerIn: parent
-                text: root.fullyActive() ? "Active" : (root.needsAttention() ? "Needs attention" : "Not set up")
-                color: {
-                  if (root.fullyActive()) return root.accent
-                  if (root.needsAttention()) return root.urgent
-                  return root.muted
+                spacing: Style.space(5)
+                Rectangle {
+                  width: Style.space(6)
+                  height: Style.space(6)
+                  radius: width / 2
+                  anchors.verticalCenter: parent.verticalCenter
+                  color: {
+                    if (root.fullyActive()) return root.accent
+                    if (root.needsAttention()) return root.warn
+                    return root.muted
+                  }
                 }
-                font.family: root.ff
-                font.pixelSize: Style.font.caption - 1
-                font.bold: true
+                Text {
+                  id: pillTxt
+                  text: root.fullyActive() ? "Protected"
+                      : (root.needsAttention() ? "Almost there" : "Not set up")
+                  color: {
+                    if (root.fullyActive()) return root.accent
+                    if (root.needsAttention()) return root.warn
+                    return root.muted
+                  }
+                  font.family: root.ff
+                  font.pixelSize: Style.font.caption - 1
+                  font.bold: true
+                }
               }
             }
-          }
-
-          // Divider
-          Rectangle {
-            width: parent.width
-            height: Math.max(1, Style.space(1))
-            color: Util.alpha(root.surfaceBorder, 0.4)
           }
 
           // ------------------------------------------------- body
@@ -513,39 +543,37 @@ Item {
               anchors.fill: parent
               spacing: root.sp
 
-              // --- Not installed: big CTA view ---
+              // --- Not installed: hero CTA view ---
               Column {
                 visible: !root.statusLoaded || (!root.installed() && !root.installing)
                 width: parent.width
                 spacing: root.sp
 
-                // Icon hero
                 Item {
                   width: parent.width
-                  height: Style.space(72)
+                  height: Style.space(76)
                   Rectangle {
-                    width: Style.space(56)
-                    height: Style.space(56)
+                    width: Style.space(64)
+                    height: Style.space(64)
                     radius: width / 2
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.verticalCenter: parent.verticalCenter
                     color: Util.alpha(root.accent, 0.07)
                     border.width: Math.max(1, Style.space(1))
                     border.color: Util.alpha(root.accent, 0.18)
-                    Image {
+                    Text {
                       anchors.centerIn: parent
-                      width: Style.space(32)
-                      height: Style.space(32)
-                      source: root.pluginBin ? "file://" + root.pluginBin.replace(/\/bin$/, "") + "/assets/face-howdy.svg" : ""
-                      fillMode: Image.PreserveAspectFit
-                      smooth: true
+                      text: "\uf0237"          // fingerprint
+                      color: root.accent
+                      font.family: root.ff
+                      font.pixelSize: Style.space(30)
                     }
                   }
                 }
 
                 Text {
                   width: parent.width
-                  text: "Unlock with your face"
+                  text: "Face unlock for your desktop"
                   color: root.surfaceText
                   font.family: root.ff
                   font.pixelSize: Style.font.title
@@ -554,7 +582,7 @@ Item {
                 }
                 Text {
                   width: parent.width
-                  text: "Uses your ThinkPad's IR camera — works in the dark. Password stays as fallback, nothing is removed."
+                  text: "Like Windows Hello — unlock sudo, SDDM and your lock screen with your face. Uses your ThinkPad's IR camera."
                   color: root.muted
                   font.family: root.ff
                   font.pixelSize: Style.font.caption
@@ -566,28 +594,29 @@ Item {
                 // Feature rows
                 Column {
                   width: parent.width
-                  spacing: Style.space(6)
+                  spacing: Style.space(8)
                   topPadding: Style.space(4)
 
                   Repeater {
                     model: [
-                      "Wires into sudo, polkit and SDDM",
-                      "Works in the dark via IR emitter",
-                      "Safe to re-run after system updates"
+                      { i: "\uf099d", t: "Wires into sudo, polkit and SDDM" },
+                      { i: "\uf0594", t: "Works in the dark via IR emitter" },
+                      { i: "\uf084",  t: "Password stays as fallback — always" },
+                      { i: "\uf0450", t: "Idempotent — safe to re-run after updates" }
                     ]
                     delegate: Row {
                       width: parent.width
-                      spacing: Style.space(8)
-                      Rectangle {
-                        width: Style.space(4)
-                        height: Style.space(4)
-                        radius: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: Util.alpha(root.accent, 0.5)
-                        anchors.leftMargin: Style.space(8)
+                      spacing: Style.space(10)
+                      Text {
+                        text: modelData.i
+                        color: root.muted
+                        font.family: root.ff
+                        font.pixelSize: Style.font.body
+                        width: Style.space(18)
+                        horizontalAlignment: Text.AlignHCenter
                       }
                       Text {
-                        text: modelData
+                        text: modelData.t
                         color: root.muted
                         font.family: root.ff
                         font.pixelSize: Style.font.caption
@@ -595,56 +624,76 @@ Item {
                     }
                   }
                 }
+
+                // Centered CTA (hidden while status is still loading)
+                Item {
+                  visible: root.statusLoaded
+                  width: parent.width
+                  height: Style.space(40)
+                  Button {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "Install Face Howdy"
+                    iconText: "\uf0db3"          // bolt
+                    selected: true
+                    fontFamily: root.ff
+                    onClicked: root.startInstall()
+                  }
+                }
               }
 
-              // --- Needs attention: blocking callout + mini cells ---
+              // --- Needs attention: warning banner + mini cells ---
               Column {
                 visible: root.statusLoaded && root.needsAttention() && !root.installing
                 width: parent.width
                 spacing: root.sp
 
-                // Attention banner
                 Rectangle {
                   width: parent.width
-                  height: attnCol.implicitHeight + Style.space(22)
+                  height: attnCol.implicitHeight + Style.space(24)
                   radius: root.r
-                  color: Util.alpha(root.muted, 0.06)
+                  color: Util.alpha(root.warn, 0.06)
                   border.width: Math.max(1, Style.space(1))
-                  border.color: Util.alpha(root.muted, 0.2)
+                  border.color: Util.alpha(root.warn, 0.28)
                   clip: true
 
-                  Rectangle {
-                    anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-                    width: Style.space(3)
-                    color: root.urgent
-                  }
-
-                  Column {
-                    id: attnCol
+                  Row {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.left: parent.left; anchors.leftMargin: Style.space(16)
-                    anchors.right: parent.right; anchors.rightMargin: Style.space(12)
-                    spacing: Style.space(3)
+                    anchors.right: parent.right; anchors.rightMargin: Style.space(14)
+                    spacing: Style.space(12)
+
                     Text {
-                      text: "Almost there"
-                      color: root.surfaceText
+                      text: "\uf0026"            // alert
+                      color: root.warn
                       font.family: root.ff
-                      font.pixelSize: Style.font.body
-                      font.bold: true
+                      font.pixelSize: Style.font.iconLarge
+                      anchors.verticalCenter: parent.verticalCenter
                     }
-                    Text {
-                      width: parent.width
-                      text: root.blockingStep()
-                      color: root.muted
-                      font.family: root.ff
-                      font.pixelSize: Style.font.caption
-                      wrapMode: Text.WordWrap
-                      lineHeight: 1.4
+                    Column {
+                      id: attnCol
+                      width: parent.width - Style.space(12) - Style.font.iconLarge
+                      spacing: Style.space(3)
+                      Text {
+                        text: "Almost there"
+                        color: root.warn
+                        font.family: root.ff
+                        font.pixelSize: Style.font.body
+                        font.bold: true
+                      }
+                      Text {
+                        width: parent.width
+                        text: root.blockingStep()
+                        color: root.muted
+                        font.family: root.ff
+                        font.pixelSize: Style.font.caption
+                        wrapMode: Text.WordWrap
+                        lineHeight: 1.4
+                      }
                     }
                   }
                 }
 
-                // Mini cell grid — only show cells that matter (installed ones)
+                // Mini cell grid — only noteworthy cells with a bad one flagged
                 Grid {
                   width: parent.width
                   columns: 2
@@ -661,63 +710,144 @@ Item {
                 }
               }
 
-              // --- Fully active: clean status view ---
+              // --- Fully active: protected face-ring hero + chips ---
               Column {
                 visible: root.statusLoaded && root.fullyActive() && !root.installing
                 width: parent.width
                 spacing: root.sp
 
-                // Active banner — minimal, no drama
-                Rectangle {
+                Column {
                   width: parent.width
-                  height: activeCol.implicitHeight + Style.space(22)
-                  radius: root.r
-                  color: Util.alpha(root.accent, 0.06)
-                  border.width: Math.max(1, Style.space(1))
-                  border.color: Util.alpha(root.accent, 0.2)
-                  clip: true
+                  spacing: Style.space(6)
+                  topPadding: Style.space(2)
 
-                  Rectangle {
-                    anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-                    width: Style.space(3)
-                    color: root.accent
-                  }
-
-                  Column {
-                    id: activeCol
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: parent.left; anchors.leftMargin: Style.space(16)
-                    anchors.right: parent.right; anchors.rightMargin: Style.space(12)
-                    spacing: Style.space(3)
-                    Text {
-                      text: "Running"
-                      color: root.surfaceText
-                      font.family: root.ff
-                      font.pixelSize: Style.font.body
-                      font.bold: true
+                  Item {
+                    width: parent.width
+                    height: Style.space(84)
+                    Rectangle {
+                      width: Style.space(72)
+                      height: Style.space(72)
+                      radius: width / 2
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      anchors.verticalCenter: parent.verticalCenter
+                      color: Util.alpha(root.accent, 0.08)
+                      border.width: Math.max(2, Style.space(2))
+                      border.color: Util.alpha(root.accent, 0.5)
+                      Text {
+                        anchors.centerIn: parent
+                        text: "\uf0237"          // fingerprint
+                        color: root.accent
+                        font.family: root.ff
+                        font.pixelSize: Style.space(34)
+                      }
                     }
-                    Text {
-                      text: "Face unlock active on sudo, polkit and lock screen"
-                      color: root.muted
-                      font.family: root.ff
-                      font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    width: parent.width
+                    text: "Protected"
+                    color: root.surfaceText
+                    font.family: root.ff
+                    font.pixelSize: Style.font.title
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                  }
+                  Text {
+                    width: parent.width
+                    text: "Face unlock is active across sudo, polkit and your lock screen"
+                    color: root.muted
+                    font.family: root.ff
+                    font.pixelSize: Style.font.caption
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
+                    lineHeight: 1.5
+                  }
+                }
+
+                // Chip strip
+                Flow {
+                  width: parent.width
+                  spacing: Style.space(6)
+                  Repeater {
+                    model: root.chips()
+                    delegate: Rectangle {
+                      height: Style.space(24)
+                      width: chipRow.implicitWidth + Style.space(14)
+                      radius: height / 2
+                      color: Util.alpha(root.accent, 0.07)
+                      border.width: Math.max(1, Style.space(1))
+                      border.color: Util.alpha(root.accent, 0.25)
+                      Row {
+                        id: chipRow
+                        anchors.centerIn: parent
+                        spacing: Style.space(5)
+                        Text {
+                          text: "\uf012c"         // check
+                          color: root.accent
+                          font.family: root.ff
+                          font.pixelSize: Style.font.caption
+                        }
+                        Text {
+                          text: modelData.label
+                          color: root.muted
+                          font.family: root.ff
+                          font.pixelSize: Style.font.caption
+                          font.bold: true
+                        }
+                      }
                     }
                   }
                 }
 
-                // Cell grid
-                Grid {
+                // Details link
+                Item {
                   width: parent.width
-                  columns: 2
-                  spacing: Style.space(6)
-                  Repeater {
-                    model: root.cellModel
-                    delegate: MiniCell {
-                      width: (parent.width - Style.space(6)) / 2
-                      label: modelData.label
-                      good: modelData.okay
-                      valueText: modelData.value
-                    }
+                  height: Style.space(26)
+                  Button {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "Status details"
+                    iconText: "\uf0142"          // chevron-right
+                    bordered: true
+                    fontFamily: root.ff
+                    onClicked: root.page = "details"
+                  }
+                }
+              }
+            }
+
+            // ---- DETAILS page ----
+            Column {
+              visible: root.page === "details"
+              anchors.fill: parent
+              spacing: root.sp
+
+              Text {
+                text: "Status details"
+                color: root.surfaceText
+                font.family: root.ff
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+              Text {
+                width: parent.width
+                text: "Everything Face Howdy manages — blue means active, gray means not set."
+                color: root.muted
+                font.family: root.ff
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+                lineHeight: 1.45
+              }
+
+              Grid {
+                width: parent.width
+                columns: 2
+                spacing: Style.space(6)
+                Repeater {
+                  model: root.cellModel
+                  delegate: MiniCell {
+                    width: (parent.width - Style.space(6)) / 2
+                    label: modelData.label
+                    good: modelData.okay
+                    valueText: modelData.value
                   }
                 }
               }
@@ -729,6 +859,43 @@ Item {
               anchors.fill: parent
               spacing: root.sp
 
+              // Phase header: label + %
+              Row {
+                width: parent.width
+                Text {
+                  id: labelPct
+                  text: root.progressLabel === "done" ? "All done" : root.phaseLabel(root.progressLabel)
+                  color: root.surfaceText
+                  font.family: root.ff
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+                Item { width: parent.width - labelPct.implicitWidth - pctTxt.implicitWidth; height: 1 }
+                Text {
+                  id: pctTxt
+                  text: Math.round(root.installProgress() * 100) + "%"
+                  color: root.accent
+                  font.family: root.ff
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+              }
+
+              // Progress bar
+              Rectangle {
+                width: parent.width
+                height: Style.space(4)
+                radius: Style.space(2)
+                color: Util.alpha(root.accent, 0.1)
+                Rectangle {
+                  width: parent.width * root.installProgress()
+                  height: parent.height
+                  radius: parent.radius
+                  color: root.accent
+                  Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                }
+              }
+
               // Phase list
               Column {
                 width: parent.width
@@ -738,7 +905,7 @@ Item {
                   model: ["packages", "ir", "models", "pam"]
                   delegate: Item {
                     width: parent.width
-                    height: Style.space(32)
+                    height: Style.space(34)
                     property int idx: index
                     property int cur: root.phaseIndex()
                     property bool isDone: idx < cur || root.installComplete
@@ -766,29 +933,27 @@ Item {
                         anchors.rightMargin: Style.space(12)
                         spacing: Style.space(10)
 
-                        // State indicator
-                        Rectangle {
-                          width: Style.space(16)
-                          height: Style.space(16)
-                          radius: width / 2
-                          anchors.verticalCenter: parent.verticalCenter
-                          color: {
-                            if (isDone) return Util.alpha(root.accent, 0.15)
-                            if (isActive) return Util.alpha(root.accent, 0.2)
-                            return Util.alpha(root.muted, 0.1)
-                          }
-                          border.width: Math.max(1, Style.space(1))
-                          border.color: {
-                            if (isDone || isActive) return root.accent
-                            return Util.alpha(root.muted, 0.25)
-                          }
+                        // State icon
+                        Item {
+                          width: Style.space(18)
+                          height: parent.height
                           Text {
                             anchors.centerIn: parent
-                            text: isDone ? "✓" : (isActive ? "·" : "")
+                            text: isDone ? "\uf05e0"            // check-circle
+                               : isActive ? "\uf0772"           // loading
+                               : "\uf0766"                      // circle-outline
                             color: isDone || isActive ? root.accent : root.muted
                             font.family: root.ff
-                            font.pixelSize: Style.font.caption - 1
-                            font.bold: true
+                            font.pixelSize: Style.font.iconSmall
+                            rotation: isActive ? 90 : 0
+                            transformOrigin: Item.Center
+                            RotationAnimation on rotation {
+                              from: 0
+                              to: 360
+                              duration: 1000
+                              loops: Animation.Infinite
+                              running: isActive
+                            }
                           }
                         }
 
@@ -809,37 +974,35 @@ Item {
                 }
               }
 
-              // Progress bar
-              Rectangle {
-                width: parent.width
-                height: Style.space(4)
-                radius: Style.space(2)
-                color: Util.alpha(root.accent, 0.1)
-                Rectangle {
-                  width: parent.width * root.installProgress()
-                  height: parent.height
-                  radius: parent.radius
-                  color: root.accent
-                  Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                }
-              }
-
               // Quote
-              Text {
-                visible: root.installing
+              Rectangle {
+                id: quoteBox
                 width: parent.width
-                text: root.currentQuote
-                color: root.muted
-                font.family: root.ff
-                font.pixelSize: Style.font.caption
-                font.italic: true
-                wrapMode: Text.WordWrap
+                height: quoteCol.implicitHeight + Style.space(16)
+                radius: Style.space(6)
+                color: Util.alpha(root.accent, 0.05)
+                border.width: Math.max(1, Style.space(1))
+                border.color: Util.alpha(root.accent, 0.15)
+                visible: root.installing
+                Text {
+                  id: quoteCol
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.left: parent.left; anchors.leftMargin: Style.space(12)
+                  anchors.right: parent.right; anchors.rightMargin: Style.space(12)
+                  text: "\u201c" + root.currentQuote + "\u201d"
+                  color: root.muted
+                  font.family: root.ff
+                  font.pixelSize: Style.font.caption
+                  font.italic: true
+                  wrapMode: Text.WordWrap
+                  lineHeight: 1.4
+                }
               }
 
               // Log
               Rectangle {
                 width: parent.width
-                height: Math.max(Style.space(110), body.height - Style.space(180))
+                height: Math.max(Style.space(110), body.height - quoteBox.height - Style.space(250))
                 radius: root.r
                 color: Util.alpha(Color.background, 0.6)
                 border.width: Math.max(1, Style.space(1))
@@ -908,17 +1071,28 @@ Item {
                   color: root.accent
                 }
 
-                Text {
-                  id: confirmTxt
+                Row {
                   anchors.verticalCenter: parent.verticalCenter
                   anchors.left: parent.left; anchors.leftMargin: Style.space(16)
                   anchors.right: parent.right; anchors.rightMargin: Style.space(16)
-                  text: "Adds a pam_howdy line to sudo, SDDM and polkit. Patches your lock screen to unlock by face on lid open. Password stays as fallback."
-                  color: root.surfaceText
-                  font.family: root.ff
-                  font.pixelSize: Style.font.body
-                  wrapMode: Text.WordWrap
-                  lineHeight: 1.45
+                  spacing: Style.space(12)
+                  Text {
+                    text: "\uf099d"             // shield-lock
+                    color: root.accent
+                    font.family: root.ff
+                    font.pixelSize: Style.font.iconLarge
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Text {
+                    id: confirmTxt
+                    width: parent.width - Style.font.iconLarge - Style.space(12)
+                    text: "Adds a pam_howdy line to sudo, SDDM and polkit. Patches your lock screen to unlock by face on lid open. Password stays as fallback."
+                    color: root.surfaceText
+                    font.family: root.ff
+                    font.pixelSize: Style.font.body
+                    wrapMode: Text.WordWrap
+                    lineHeight: 1.45
+                  }
                 }
               }
             }
@@ -929,22 +1103,41 @@ Item {
               anchors.fill: parent
               spacing: root.sp
 
-              Text {
-                text: "Remove Face Howdy?"
-                color: root.urgent
-                font.family: root.ff
-                font.pixelSize: Style.font.title
-                font.bold: true
-              }
-
-              Text {
+              Column {
                 width: parent.width
-                text: "PAM lines are always cleared and password auth restored. Choose what to do with the packages."
-                color: root.muted
-                font.family: root.ff
-                font.pixelSize: Style.font.caption
-                wrapMode: Text.WordWrap
-                lineHeight: 1.45
+                spacing: Style.space(8)
+                topPadding: Style.space(2)
+
+                Item {
+                  width: parent.width
+                  height: Style.space(56)
+                  Text {
+                    anchors.centerIn: parent
+                    text: "\uf099e"             // shield-off
+                    color: root.urgent
+                    font.family: root.ff
+                    font.pixelSize: Style.space(36)
+                  }
+                }
+                Text {
+                  width: parent.width
+                  text: "Remove Face Howdy?"
+                  color: root.urgent
+                  font.family: root.ff
+                  font.pixelSize: Style.font.title
+                  font.bold: true
+                  horizontalAlignment: Text.AlignHCenter
+                }
+                Text {
+                  width: parent.width
+                  text: "PAM lines are always cleared and password auth restored. Choose what to do with the packages."
+                  color: root.muted
+                  font.family: root.ff
+                  font.pixelSize: Style.font.caption
+                  wrapMode: Text.WordWrap
+                  horizontalAlignment: Text.AlignHCenter
+                  lineHeight: 1.45
+                }
               }
 
               // Two option cards
@@ -970,26 +1163,37 @@ Item {
                       ? Util.alpha(root.muted, 0.08) : Util.alpha(root.muted, 0.04)
                   }
 
-                  Column {
-                    id: keepCol
+                  Row {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.left: parent.left; anchors.leftMargin: Style.space(16)
                     anchors.right: parent.right; anchors.rightMargin: Style.space(16)
-                    spacing: Style.space(3)
+                    spacing: Style.space(12)
                     Text {
-                      text: "Keep packages"
-                      color: root.surfaceText
-                      font.family: root.ff
-                      font.pixelSize: Style.font.body
-                      font.bold: true
-                    }
-                    Text {
-                      width: parent.width
-                      text: "Clears PAM and the lock patch. Re-enabling later is instant."
+                      text: "\uf012c"            // check
                       color: root.muted
                       font.family: root.ff
-                      font.pixelSize: Style.font.caption
-                      wrapMode: Text.WordWrap
+                      font.pixelSize: Style.font.body
+                      anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Column {
+                      id: keepCol
+                      width: parent.width - Style.font.body - Style.space(12)
+                      spacing: Style.space(3)
+                      Text {
+                        text: "Keep packages"
+                        color: root.surfaceText
+                        font.family: root.ff
+                        font.pixelSize: Style.font.body
+                        font.bold: true
+                      }
+                      Text {
+                        width: parent.width
+                        text: "Clears PAM and the lock patch. Re-enabling later is instant."
+                        color: root.muted
+                        font.family: root.ff
+                        font.pixelSize: Style.font.caption
+                        wrapMode: Text.WordWrap
+                      }
                     }
                   }
                 }
@@ -1012,26 +1216,37 @@ Item {
                       ? Util.alpha(root.urgent, 0.1) : Util.alpha(root.urgent, 0.05)
                   }
 
-                  Column {
-                    id: deleteCol
+                  Row {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.left: parent.left; anchors.leftMargin: Style.space(16)
                     anchors.right: parent.right; anchors.rightMargin: Style.space(16)
-                    spacing: Style.space(3)
+                    spacing: Style.space(12)
                     Text {
-                      text: "Remove everything"
+                      text: "\uf0a79"            // trash-can
                       color: root.urgent
                       font.family: root.ff
                       font.pixelSize: Style.font.body
-                      font.bold: true
+                      anchors.verticalCenter: parent.verticalCenter
                     }
-                    Text {
-                      width: parent.width
-                      text: "Uninstalls howdy and IR emitter packages and deletes enrolled face data."
-                      color: root.muted
-                      font.family: root.ff
-                      font.pixelSize: Style.font.caption
-                      wrapMode: Text.WordWrap
+                    Column {
+                      id: deleteCol
+                      width: parent.width - Style.font.body - Style.space(12)
+                      spacing: Style.space(3)
+                      Text {
+                        text: "Remove everything"
+                        color: root.urgent
+                        font.family: root.ff
+                        font.pixelSize: Style.font.body
+                        font.bold: true
+                      }
+                      Text {
+                        width: parent.width
+                        text: "Uninstalls howdy and IR emitter packages and deletes enrolled face data."
+                        color: root.muted
+                        font.family: root.ff
+                        font.pixelSize: Style.font.caption
+                        wrapMode: Text.WordWrap
+                      }
                     }
                   }
                 }
@@ -1068,21 +1283,27 @@ Item {
 
                 Button {
                   text: "Add face"
+                  iconText: "\uf0014"          // account-plus
                   selected: true
                   width: parent.width
+                  fontFamily: root.ff
                   onClicked: root.enrollFace()
                 }
                 Button {
                   text: "Test recognition"
+                  iconText: "\uf0208"          // eye
                   bordered: true
                   width: parent.width
+                  fontFamily: root.ff
                   onClicked: root.testFace()
                 }
                 Button {
                   text: "Clear faces"
-                  selected: true
-                  accent: root.urgent
+                  iconText: "\uf0015"          // account-remove
+                  bordered: true
+                  foreground: root.urgent
                   width: parent.width
+                  fontFamily: root.ff
                   onClicked: root.removeFace()
                 }
               }
@@ -1100,14 +1321,19 @@ Item {
             Button {
               id: backBtn
               text: "Back"
+              iconText: "\uf004d"              // arrow-left
               bordered: true
-              visible: root.page === "facelist" || root.page === "remove" || root.page === "confirm"
+              fontFamily: root.ff
+              visible: root.page === "facelist" || root.page === "remove" || root.page === "confirm" || root.page === "details"
               onClicked: root.page = "status"
             }
             Button {
               id: removeBtn
               text: "Remove"
+              iconText: "\uf0a79"              // trash-can
               bordered: true
+              foreground: root.urgent
+              fontFamily: root.ff
               visible: root.page === "status" && (root.installed() || root.pamDeployed()) && !root.installing
               onClicked: root.page = "remove"
             }
@@ -1127,21 +1353,27 @@ Item {
             Button {
               id: deployBtn
               text: "Deploy PAM"
+              iconText: "\uf099d"              // shield-lock
               bordered: true
+              fontFamily: root.ff
               visible: root.page === "status" && root.installed() && !root.pamDeployed() && !root.installing
               onClicked: root.page = "confirm"
             }
             Button {
               id: faceDataBtn
               text: "Face data"
+              iconText: "\uf0004"              // account
               bordered: true
+              fontFamily: root.ff
               visible: root.page === "status" && root.installed() && !root.installing
               onClicked: root.page = "facelist"
             }
             Button {
               id: primaryBtn
               text: root.primaryLabel()
+              iconText: root.primaryIcon()
               selected: true
+              fontFamily: root.ff
               visible: root.primaryVisible()
               onClicked: root.primaryAction()
             }
@@ -1153,14 +1385,14 @@ Item {
 
   // ================================================================ components
 
-  // MiniCell — compact status cell replacing the old taller Cell
+  // MiniCell — compact status cell with a check LED and label/value.
   component MiniCell : Rectangle {
     id: mc
     property string label: ""
     property string valueText: ""
     property bool good: false
 
-    height: Math.max(Style.space(36), Style.font.body + Style.space(16))
+    height: Math.max(Style.space(38), Style.font.body + Style.space(18))
     radius: root.r
 
     Behavior on color { ColorAnimation { duration: 120 } }
@@ -1178,13 +1410,23 @@ Item {
       anchors.rightMargin: Style.space(10)
       spacing: Style.space(8)
 
-      // LED dot
+      // LED circle with check
       Rectangle {
-        width: Style.space(8)
-        height: Style.space(8)
+        width: Style.space(20)
+        height: Style.space(20)
         radius: width / 2
         anchors.verticalCenter: parent.verticalCenter
-        color: mc.good ? root.accent : Util.alpha(root.muted, 0.3)
+        color: mc.good ? Util.alpha(root.accent, 0.15) : Util.alpha(root.muted, 0.08)
+        border.width: Math.max(1, Style.space(1))
+        border.color: mc.good ? Util.alpha(root.accent, 0.35) : Util.alpha(root.muted, 0.2)
+        Text {
+          anchors.centerIn: parent
+          text: "\uf012c"                    // check
+          color: mc.good ? root.accent : root.muted
+          font.family: root.ff
+          font.pixelSize: Style.font.caption - 2
+          font.bold: true
+        }
       }
 
       Column {
