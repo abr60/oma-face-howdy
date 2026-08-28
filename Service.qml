@@ -829,7 +829,7 @@ Item {
               }
               Text {
                 width: parent.width
-                text: "Everything Face Howdy manages — blue means active, gray means not set."
+                text: "Everything Face Howdy manages — accent means active, gray means not set."
                 color: root.muted
                 font.family: root.ff
                 font.pixelSize: Style.font.caption
