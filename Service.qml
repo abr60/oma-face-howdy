@@ -42,6 +42,8 @@ Item {
   property string logText: ""
   property string currentQuote: "Hang tight…"
   property var quotes: []
+  property string enrollLabel: ""
+  property bool enrolling: false
 
   // ------------------------------------------------------------------ style
   readonly property color surfaceColor: Color.polkit.background
@@ -151,11 +153,31 @@ Item {
     root.dismiss()
   }
   function retryPackages() { root.packagesNeedsTerminal = false; root.runPhase("packages") }
-  function enrollFace() {
+  function enrollFaceTerminal() {
     var cmd = "sudo howdy add && sudo " + root.pluginBin + "/omarchy-howdy-refresh-state; echo; echo '[face.howdy] enrollment finished — press Enter to close'; read -p 'Press Enter to close'"
     Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
     root.logText = "Opened terminal for face enrollment — follow the prompts there, then return here."
     root.dismiss()
+  }
+  function enrollFace() {
+    // Headless in-UI enrollment: no terminal. howdy add --plain -y skips the
+    // label prompt, captures directly (2s delay + up to 60 frames, no preview).
+    // Keep the overlay visible so the user sees progress/logs.
+    var label = String(root.enrollLabel || "").trim()
+    if (label.length > 24) label = label.slice(0, 24)
+    // Basic label sanity: howdy rejects path-unsafe chars; keep it simple.
+    if (label && !/^[A-Za-z0-9._-]+$/.test(label)) {
+      root.logText = "Invalid label — use letters, numbers, dot, dash or underscore (max 24)."
+      return
+    }
+    root.enrolling = true
+    root.logText = "Looking straight at the camera… capturing in 2 seconds (up to 60 frames) — stay still."
+    enrollProc.collected = ""
+    var cmd = ["/usr/bin/howdy", "add", "--plain", "-y"]
+    if (label) cmd.push(label)
+    // pkexec handles auth; howdy itself still runs as root and writes to /etc/howdy.
+    enrollProc.command = ["pkexec"].concat(cmd)
+    enrollProc.running = true
   }
   function openTestTerminal() {
     var cmd = "sudo howdy test; echo; echo '[face.howdy] test finished — press Enter to close'; read -p 'Press Enter to close'"
@@ -362,6 +384,39 @@ Item {
       if (exitCode !== 0) root.logText += "Test exited (code " + exitCode + ").\n"
       else root.logText += "Test finished — press Q in the preview to reopen, or close this panel.\n"
     }
+  }
+  Process {
+    id: enrollProc; property string collected: ""
+    command: ["pkexec", "/usr/bin/howdy", "add", "--plain", "-y"]
+    stdout: SplitParser { onRead: function(data) { enrollProc.collected += data + "\n"; root.logText += data + "\n" } }
+    stderr: SplitParser { onRead: function(data) { enrollProc.collected += data + "\n"; root.logText += data + "\n" } }
+    onExited: {
+      root.enrolling = false
+      var out = String(enrollProc.collected)
+      if (exitCode === 0) {
+        root.logText += "\n[face.howdy] Enrollment succeeded.\n"
+        enrollRefreshProc.command = ["pkexec", root.pluginBin + "/omarchy-howdy-refresh-state"]
+        enrollRefreshProc.running = true
+        root.refreshStatus()
+        return
+      }
+      if (exitCode !== 0 && out.trim() === "") {
+        root.logText += "Enrollment cancelled or failed (code " + exitCode + ").\n"
+        return
+      }
+      // Known failure strings from howdy's print_capture_failure / add flow
+      if (out.indexOf("No face detected") !== -1)
+        root.logText += "\nHint: center your face, good light, IR emitter on.\n"
+      else if (out.indexOf("only black frames") !== -1 || out.indexOf("too dark") !== -1)
+        root.logText += "\nHint: IR emitter not firing — check IR calibrated status.\n"
+      else if (out.indexOf("Multiple faces") !== -1)
+        root.logText += "\nHint: make sure only one face is in view.\n"
+      root.logText += "Enrollment failed (code " + exitCode + "). Try again or use 'Add in terminal'.\n"
+    }
+  }
+  Process {
+    id: enrollRefreshProc; command: ["pkexec", "/bin/bash", "-c", "true"]
+    onExited: root.refreshStatus()
   }
   Process {
     id: quotesProc; command: ["cat", "/dev/null"]
@@ -1284,18 +1339,93 @@ Item {
               }
               Text {
                 width: parent.width
-                text: "Add opens terminal enrollment. Test pops a live camera preview — press Q to close. Clear removes all faces."
+                text: "Add captures directly in the UI — no terminal. Label is optional."
                 color: root.muted; font.family: root.ff; font.pixelSize: Style.font.caption
                 wrapMode: Text.WordWrap; lineHeight: 1.45
               }
 
+              // Label input (optional, auto if empty)
+              Rectangle {
+                width: parent.width; height: Style.space(36); radius: root.r
+                color: Util.alpha(root.muted, 0.06)
+                border.width: Math.max(1, Style.space(1))
+                border.color: labelInput.activeFocus ? Util.alpha(root.accent, 0.35) : Util.alpha(root.muted, 0.12)
+                clip: true
+                TextInput {
+                  id: labelInput
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.space(12); anchors.rightMargin: Style.space(12)
+                  verticalAlignment: Text.AlignVCenter
+                  color: root.surfaceText; font.family: root.ff; font.pixelSize: Style.font.body
+                  text: root.enrollLabel
+                  onTextChanged: if (text !== root.enrollLabel) root.enrollLabel = text
+                  maximumLength: 24
+                  selectByMouse: true
+                }
+                Text {
+                  anchors.fill: labelInput; anchors.leftMargin: 2
+                  verticalAlignment: Text.AlignVCenter
+                  text: "Label (optional, auto if empty)"
+                  color: Util.alpha(root.muted, 0.5)
+                  font.family: root.ff; font.pixelSize: Style.font.caption
+                  visible: root.enrollLabel.length === 0 && !labelInput.activeFocus
+                }
+              }
+              Text {
+                width: parent.width
+                text: "Use letters, numbers, dot/dash/underscore — max 24."
+                color: Util.alpha(root.muted, 0.55)
+                font.family: root.ff; font.pixelSize: Style.font.caption - 1
+                visible: root.enrollLabel.length > 0
+              }
+
               Column {
                 width: parent.width; spacing: Style.space(8)
-                Button { text: "Add face";        selected: true;  width: parent.width; fontFamily: root.ff; onClicked: root.enrollFace() }
+                Button {
+                  text: root.enrolling ? "Capturing… look straight at camera" : "Add face"
+                  selected: true; width: parent.width; fontFamily: root.ff
+                  enabled: !root.enrolling
+                  onClicked: root.enrollFace()
+                }
+                Text {
+                  width: parent.width
+                  text: "or add in terminal →"
+                  color: Util.alpha(root.muted, 0.5)
+                  font.family: root.ff; font.pixelSize: Style.font.caption
+                  horizontalAlignment: Text.AlignHCenter
+                  visible: !root.enrolling
+                  MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.enrollFaceTerminal() }
+                }
                 Button { text: "Test recognition"; bordered: true; width: parent.width; fontFamily: root.ff; onClicked: root.testFace() }
                 Button {
                   text: "Clear faces"; bordered: true; foreground: root.urgent
                   width: parent.width; fontFamily: root.ff; onClicked: root.removeFace()
+                }
+              }
+
+              // Inline log / progress for enrollment
+              Rectangle {
+                visible: root.enrolling || (root.logText && root.page === "facelist")
+                width: parent.width
+                height: Math.min(Style.space(110), enrollLog.implicitHeight + Style.space(20))
+                radius: root.r
+                color: Util.alpha(Color.background, 0.75)
+                border.width: Math.max(1, Style.space(1))
+                border.color: Util.alpha(root.muted, 0.1)
+                clip: true
+                Flickable {
+                  anchors.fill: parent; anchors.margins: Style.space(10)
+                  contentHeight: enrollLog.implicitHeight
+                  flickableDirection: Flickable.VerticalFlick
+                  boundsBehavior: Flickable.StopAtBounds
+                  onContentHeightChanged: contentY = Math.max(0, contentHeight - height)
+                  Text {
+                    id: enrollLog
+                    width: parent.width; text: root.logText || "—"
+                    color: root.enrolling ? root.accent : Util.alpha(root.accent, 0.7)
+                    font.family: "monospace"; font.pixelSize: Style.font.caption - 1
+                    wrapMode: Text.Wrap; lineHeight: 1.45
+                  }
                 }
               }
             }
