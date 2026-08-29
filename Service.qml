@@ -65,7 +65,12 @@ Item {
   // ---------------------------------------------------------------- open
   function open(payloadJson) {
     root.opened = true
-    root.page   = "status"
+    // If we dismissed while the packages terminal fallback was active, reopen
+    // on the install page so the user can hit "I've finished — continue".
+    if (root.packagesNeedsTerminal || root.installing)
+      root.page = "install"
+    else
+      root.page = "status"
     root.statusLoaded = false
     root.refreshStatus()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -143,17 +148,20 @@ Item {
   function openPackagesTerminal() {
     var cmd = root.packagesCmd + "; echo; echo '[face.howdy] packages step finished — close this window when done'; read -p 'Press Enter to close'"
     Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
+    root.dismiss()
   }
   function retryPackages() { root.packagesNeedsTerminal = false; root.runPhase("packages") }
   function enrollFace() {
     var cmd = "sudo howdy add && sudo " + root.pluginBin + "/omarchy-howdy-refresh-state; echo; echo '[face.howdy] enrollment finished — press Enter to close'; read -p 'Press Enter to close'"
     Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
     root.logText = "Opened terminal for face enrollment — follow the prompts there, then return here."
+    root.dismiss()
   }
   function openTestTerminal() {
     var cmd = "sudo howdy test; echo; echo '[face.howdy] test finished — press Enter to close'; read -p 'Press Enter to close'"
     Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
     root.logText = "Opened terminal for recognition test — results appear there."
+    root.dismiss()
   }
   function testFace() {
     // Option A: try in-window GUI preview via pkexec + display env injection.
@@ -175,6 +183,8 @@ Item {
     testProc.command = cmd
     testProc.running = true
     root.logText = "Opening recognition preview… press Q in the preview window to close it."
+    // Hide the overlay so the OpenCV preview (XWayland) isn't hidden behind the scrim.
+    root.dismiss()
   }
   function removeFace() {
     root.intent = "clearFace"; root.beginTask("clear")
