@@ -111,7 +111,29 @@ expected="$PLUGIN_DIR/system/lock-howdy.patch"
 [[ "$remaining" == "$expected" ]] || fail "system/ should contain only lock-howdy.patch, got: $remaining"
 pass "system/ contains only lock-howdy.patch"
 
-# 7. deploy/restore respect FACE_HOWDY_* overrides even when HOME=/root (regression for P1 root-HOME bug).
+# 7. packages phase is headless-safe: excludes -debug, returns 42 for terminal fallback.
+grep -q '\-debug-' "$PLUGIN_DIR/bin/omarchy-howdy-setup-system" || fail "packages cache should exclude -debug"
+grep -q "return 42" "$PLUGIN_DIR/bin/omarchy-howdy-setup-system" || fail "packages should return 42 for terminal fallback"
+grep -q "NEEDS_TERMINAL" "$PLUGIN_DIR/bin/omarchy-howdy-setup-system" || fail "packages should emit NEEDS_TERMINAL"
+grep -q "YAY_CMD" "$PLUGIN_DIR/bin/omarchy-howdy-setup-system" || fail "packages should define YAY_CMD"
+pass "packages phase hardened (debug exclusion, exit 42 terminal fallback)"
+
+# 8. Service.qml handles packages terminal fallback (exit 42 + UI).
+grep -q "packagesNeedsTerminal" "$PLUGIN_DIR/Service.qml" || fail "Service.qml missing packagesNeedsTerminal"
+grep -q "openPackagesTerminal" "$PLUGIN_DIR/Service.qml" || fail "Service.qml missing openPackagesTerminal"
+grep -q "exitCode === 42" "$PLUGIN_DIR/Service.qml" || fail "Service.qml should handle exit 42"
+grep -q "omarchy-launch-terminal" "$PLUGIN_DIR/Service.qml" || fail "Service.qml should use omarchy-launch-terminal"
+pass "Service.qml packages terminal fallback wired (exit 42, UI buttons)"
+
+# 9. Enroll/Test use real terminal (not headless pkexec).
+grep -q 'sudo howdy add && sudo' "$PLUGIN_DIR/Service.qml" || fail "enrollFace should chain howdy add + refresh-state in terminal"
+grep -q 'sudo howdy test' "$PLUGIN_DIR/Service.qml" || fail "testFace should run sudo howdy test in terminal"
+# enroll/test must not be masked with || true fake-done
+if grep -q "done: enroll" "$PLUGIN_DIR/Service.qml"; then fail "enrollFace still has fake || true done masking"; fi
+if grep -q "done: test" "$PLUGIN_DIR/Service.qml"; then fail "testFace still has fake || true done masking"; fi
+pass "enroll/test use terminal with real TTY (no fake done)"
+
+# 10. deploy/restore respect FACE_HOWDY_* overrides even when HOME=/root (regression for P1 root-HOME bug).
 HOME=/root FACE_HOWDY_SHELL_JSON="$HOME_W/.config/omarchy/shell.json" \
   FACE_HOWDY_PLUGIN_ROOT="$HOME_W/.config/omarchy/plugins" \
   FACE_HOWDY_STATE_DIR="$HOME_W/.local/state/face.howdy" \

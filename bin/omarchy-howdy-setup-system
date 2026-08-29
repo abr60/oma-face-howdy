@@ -14,7 +14,7 @@
 #   setup-system all       Run every phase (packages → ir → models → pam)
 #
 # Phases emit plain progress lines; the GUI parses them for the status view.
-# Exit codes: 0=success, 1=fatal, 2=already configured (non-fatal).
+# Exit codes: 0=success, 1=fatal, 2=already configured (non-fatal), 42=needs terminal.
 
 set -euo pipefail
 
@@ -44,66 +44,50 @@ phase_packages() {
     return 0
   fi
 
-  msg "Installing howdy-next-git and linux-enable-ir-emitter-git (this can take a while)..."
+  local YAY_CMD="yay -S --noconfirm --needed howdy-next-git linux-enable-ir-emitter-git"
 
-  # Under pkexec, AUR helpers (makepkg) refuse to run as root.
-  # pkexec sets PKEXEC_UID to the invoking user's UID — drop to that user for
-  # the build step, then install the resulting .pkg.tar as root via pacman -U.
+  # Headless-safe cache path: if a previous yay build left .pkg.tar.zst files
+  # in the user's cache, install them directly (no TTY, no sudo prompt).
+  # Exclude -debug packages — pacman -U on a -debug file would fail.
   local real_uid="${PKEXEC_UID:-}"
   local real_user=""
   if [[ -n "$real_uid" ]]; then
     real_user=$(getent passwd "$real_uid" 2>/dev/null | cut -d: -f1 || true)
   fi
-
   if [[ -n "$real_user" ]]; then
-    msg "Building AUR packages as user '$real_user' (pkexec root cannot build AUR)..."
-    sudo -H -u "#$real_uid" bash -c '
-      set -euo pipefail
-      helper=""
-      for c in yay paru; do command -v "$c" &>/dev/null && helper="$c" && break; done
-      if [[ -z "$helper" ]]; then
-        echo "ERROR: No AUR helper found for user $USER" >&2; exit 1
-      fi
-      "$helper" -S --needed --noconfirm howdy-next-git linux-enable-ir-emitter-git
-    ' || true
-
-    # Install any successfully built packages from the user's yay/paru cache.
     local user_home="/home/$real_user"
+    local installed_from_cache=false
     for pkg in howdy-next-git linux-enable-ir-emitter-git; do
       if ! is_installed "$pkg"; then
-        local pkgfile
+        local pkgfile=""
+        # Find newest non-debug package; never abort the phase on find/sort errors.
         pkgfile=$(find "$user_home/.cache/yay/$pkg" "$user_home/.cache/paru/$pkg" \
-          -maxdepth 1 -name '*.pkg.tar.*' -printf '%T@ %p\n' 2>/dev/null \
-          | sort -rn | head -1 | cut -d' ' -f2-)
-        if [[ -n "${pkgfile:-}" ]]; then
-          msg "Installing $pkg from user cache..."
-          pacman -U --noconfirm "$pkgfile"
+          -maxdepth 1 -name '*.pkg.tar.*' ! -name '*-debug-*.pkg.tar.*' \
+          -printf '%T@ %p\n' 2>/dev/null | sort -rn 2>/dev/null | head -1 2>/dev/null | cut -d' ' -f2- || true)
+        if [[ -n "${pkgfile:-}" && -f "$pkgfile" ]]; then
+          msg "Installing $pkg from user cache: $(basename "$pkgfile")"
+          if pacman -U --noconfirm "$pkgfile" 2>&1 || true; then
+            is_installed "$pkg" && installed_from_cache=true || true
+          fi
         fi
       fi
     done
-  elif [[ -n "${OMARCHY_PKG_AUR_ADD:-}" && -x "${OMARCHY_PKG_AUR_ADD:-}" ]]; then
-    "$OMARCHY_PKG_AUR_ADD" howdy-next-git linux-enable-ir-emitter-git
-  elif command -v omarchy-pkg-aur-add &>/dev/null; then
-    omarchy-pkg-aur-add howdy-next-git linux-enable-ir-emitter-git
-  elif command -v yay &>/dev/null; then
-    yay -S --needed --noconfirm howdy-next-git linux-enable-ir-emitter-git
-  else
-    err "No AUR helper (yay/paru/omarchy-pkg-aur-add) found — cannot install howdy packages."
-    return 1
+    if is_installed howdy-next-git && is_installed linux-enable-ir-emitter-git; then
+      msg "Howdy and IR emitter installed from cache."
+      echo "LEIRE_BIN=$(command -v linux-enable-ir-emitter || echo '')"
+      return 0
+    fi
+    # If still missing, the cache had nothing usable — fall through to terminal fallback.
   fi
 
-  if ! is_installed howdy-next-git || ! is_installed linux-enable-ir-emitter-git; then
-    err "Package install failed. Try manually: yay -S howdy-next-git linux-enable-ir-emitter-git"
-    return 1
-  fi
-
-  if [[ -z "$(command -v linux-enable-ir-emitter 2>/dev/null || true)" ]]; then
-    err "linux-enable-ir-emitter binary not on PATH after install."
-    return 1
-  fi
-
-  echo "LEIRE_BIN=$(command -v linux-enable-ir-emitter)"
-  return 0
+  # No headless path can install AUR packages here (yay needs a TTY for sudo
+  # prompts under pkexec). Tell the GUI to open a terminal instead.
+  msg "Packages still missing — AUR install needs a terminal (yay prompts for sudo)."
+  msg "Run in a terminal: $YAY_CMD"
+  msg "After it finishes, press 'Continue' in the wizard or re-run: pkexec $0 packages"
+  echo "NEEDS_TERMINAL=1"
+  echo "YAY_CMD=$YAY_CMD"
+  return 42
 }
 
 # --------------------------------------------------------------------------

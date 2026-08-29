@@ -29,7 +29,7 @@ enrolled() {
     grep -qx "yes" "$marker" 2>/dev/null && echo yes || echo no
     return
   fi
-  if sudo -n ls /etc/howdy/models/*.dat &>/dev/null 2>&1; then echo yes; else echo no; fi
+  if sudo -n bash -c 'compgen -G "/etc/howdy/models/*.dat" >/dev/null 2>&1' 2>/dev/null; then echo yes; else echo no; fi
 }
 
 ir_configured() {

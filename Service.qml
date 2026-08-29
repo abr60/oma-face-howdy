@@ -37,6 +37,8 @@ Item {
   property string progressLabel: ""
   property bool installing: false
   property bool installComplete: false
+  property bool packagesNeedsTerminal: false
+  property string packagesCmd: "yay -S --noconfirm --needed howdy-next-git linux-enable-ir-emitter-git"
   property string logText: ""
   property string currentQuote: "Hang tight…"
   property var quotes: []
@@ -109,7 +111,7 @@ Item {
       root.pluginBin + "/omarchy-howdy-setup-system", phase]
     setupProc.running = true
   }
-  function beginTask(label) { root.installing = true; root.progressLabel = label; root.logText = ""; root.page = "install" }
+  function beginTask(label) { root.installing = true; root.progressLabel = label; root.packagesNeedsTerminal = false; root.logText = ""; root.page = "install" }
   function onSetupDone(ok) {
     if (!ok) { root.failTask(); return }
     if (root.intent === "install") {
@@ -124,7 +126,7 @@ Item {
     } else { root.finishSetup(); return }
   }
   function failTask()    { root.installing = false; root.page = "status"; root.intent = ""; root.refreshStatus() }
-  function finishSetup() { root.installing = false; root.installComplete = true; root.progressLabel = "done"; root.currentQuote = "All done."; root.intent = ""; root.refreshStatus() }
+  function finishSetup() { root.installing = false; root.packagesNeedsTerminal = false; root.installComplete = true; root.progressLabel = "done"; root.currentQuote = "All done."; root.intent = ""; root.refreshStatus() }
   function scheduleShellRestart() { Util.execDetached("omarchy restart shell") }
   function deployLock() {
     lockProc.collected = ""
@@ -137,10 +139,26 @@ Item {
     restoreLockProc.running = true
   }
 
-  // --------------------------------------------------------------- face
-  function enrollFace() { root.intent = "enroll";    root.beginTask("enroll"); root.runUserCmd("sudo howdy add 2>&1 || true; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; echo 'done: enroll'") }
-  function testFace()   { root.intent = "test";      root.beginTask("test");   root.runUserCmd("sudo howdy test 2>&1 || true; echo 'done: test'") }
-  function removeFace() { root.intent = "clearFace"; root.beginTask("clear");  root.runUserCmd("sudo howdy clear -y 2>&1 || true; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; echo 'done: clear'") }
+  // --------------------------------------------------------------- face / terminal
+  function openPackagesTerminal() {
+    var cmd = root.packagesCmd + "; echo; echo '[face.howdy] packages step finished — close this window when done'; read -p 'Press Enter to close'"
+    Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
+  }
+  function retryPackages() { root.packagesNeedsTerminal = false; root.runPhase("packages") }
+  function enrollFace() {
+    var cmd = "sudo howdy add && sudo " + root.pluginBin + "/omarchy-howdy-refresh-state; echo; echo '[face.howdy] enrollment finished — press Enter to close'; read -p 'Press Enter to close'"
+    Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
+    root.logText = "Opened terminal for face enrollment — follow the prompts there, then return here."
+  }
+  function testFace() {
+    var cmd = "sudo howdy test; echo; echo '[face.howdy] test finished — press Enter to close'; read -p 'Press Enter to close'"
+    Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
+    root.logText = "Opened terminal for recognition test — results appear there."
+  }
+  function removeFace() {
+    root.intent = "clearFace"; root.beginTask("clear")
+    root.runUserCmd("sudo howdy clear -y 2>&1; rc=$?; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; exit $rc")
+  }
   function runUserCmd(cmd) {
     root.nextQuote()
     setupProc.phase = cmd; setupProc.collected = ""
@@ -225,11 +243,23 @@ Item {
     if (root.yes(root.status.enrolled)) return "All set up — face enrolled and active."
     return "Ready — enroll a face via Face data → Add."
   }
+  function continueSetup() {
+    // Resume the install chain from the first missing step. Packages phase is
+    // fast-path: if both AUR pkgs already present it returns immediately, so
+    // calling startInstall() from any needsAttention state safely finishes the
+    // remaining ir/models/pam steps without user having to guess the order.
+    root.startInstall()
+  }
   function primaryLabel() {
     if (root.page === "install") return root.installComplete ? "Done" : "Working…"
     if (root.page === "confirm") return "Deploy PAM"
     if (root.installing)         return "Working…"
     if (!root.installed())       return "Install"
+    if (root.needsAttention()) {
+      if (!root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models))
+        return "Finish setup"
+      if (!root.yes(root.status.enrolled)) return "Enroll face"
+    }
     if (!root.yes(root.status.enrolled)) return "Enroll face"
     return "Re-enroll"
   }
@@ -242,6 +272,13 @@ Item {
       case "status":
         if (root.installing) return
         if (!root.installed()) { root.startInstall(); return }
+        if (root.needsAttention()) {
+          if (!root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models)) {
+            root.continueSetup(); return
+          }
+          // Only enrolled is missing — go to face enrollment.
+          root.page = "facelist"; return
+        }
         root.page = "facelist"; return
       case "install":
         if (root.installComplete) { root.page = "status"; root.installComplete = false; return }
@@ -261,7 +298,16 @@ Item {
     id: setupProc; property string collected: ""; property string phase: ""
     command: ["pkexec", "/bin/bash", "--", "true"]
     stdout: SplitParser { onRead: function(data) { setupProc.collected += data + "\n"; root.logText += data + "\n"; root.nextQuote() } }
-    onExited: { if (exitCode !== 0) root.logText += "Error: step failed.\n"; root.onSetupDone(exitCode === 0) }
+    onExited: {
+      if (exitCode === 42) {
+        root.installing = false
+        root.packagesNeedsTerminal = true
+        root.logText += "\n[face.howdy] Packages need a terminal — see instructions above.\n"
+        return
+      }
+      if (exitCode !== 0) root.logText += "Error: step failed.\n"
+      root.onSetupDone(exitCode === 0)
+    }
   }
   Process {
     id: quotesProc; command: ["cat", "/dev/null"]
@@ -607,6 +653,34 @@ Item {
                     }
                   }
                 }
+
+                // CTA — the missing "finish setting up" entry. When PAM/IR/models
+                // are still absent this calls continueSetup (full install chain);
+                // when only a face is missing it goes to enrollment. Fixes the
+                // dead-end after manual pkg install or interrupted install.
+                Button {
+                  width: parent.width
+                  text: (!root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models)) ? "Finish setup" : "Enroll face"
+                  selected: true; fontFamily: root.ff
+                  onClicked: {
+                    if (!root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models))
+                      root.continueSetup()
+                    else
+                      root.page = "facelist"
+                  }
+                }
+                Text {
+                  width: parent.width
+                  text: "or manage face data →"
+                  color: Util.alpha(root.muted, 0.5)
+                  font.family: root.ff; font.pixelSize: Style.font.caption
+                  horizontalAlignment: Text.AlignHCenter
+                  visible: !root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models)
+                  MouseArea {
+                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    onClicked: root.page = "facelist"
+                  }
+                }
               }
 
               // --- Fully active ---
@@ -896,6 +970,58 @@ Item {
                   color: Util.alpha(root.muted, 0.75)
                   font.family: root.ff; font.pixelSize: Style.font.caption; font.italic: true
                   wrapMode: Text.WordWrap; lineHeight: 1.4
+                }
+              }
+
+              // Packages terminal fallback — AUR needs a TTY
+              Rectangle {
+                visible: root.packagesNeedsTerminal && root.progressLabel === "packages"
+                width: parent.width
+                height: pkgTermCol.implicitHeight + Style.space(22)
+                radius: root.r
+                color: Util.alpha(root.warn, 0.06)
+                border.width: Math.max(1, Style.space(1))
+                border.color: Util.alpha(root.warn, 0.30)
+                clip: true
+
+                Rectangle {
+                  anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+                  width: Style.space(3); color: root.warn
+                }
+
+                Column {
+                  id: pkgTermCol
+                  anchors.left: parent.left; anchors.leftMargin: Style.space(14)
+                  anchors.right: parent.right; anchors.rightMargin: Style.space(14)
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(8)
+
+                  Text {
+                    width: parent.width
+                    text: "Packages need a terminal — yay prompts for sudo"
+                    color: root.warn; font.family: root.ff; font.pixelSize: Style.font.caption; font.bold: true
+                    wrapMode: Text.WordWrap
+                  }
+                  Rectangle {
+                    width: parent.width; height: pkgCmdTxt.implicitHeight + Style.space(10)
+                    radius: Style.space(6)
+                    color: Util.alpha(Color.background, 0.9)
+                    border.width: Math.max(1, Style.space(1))
+                    border.color: Util.alpha(root.muted, 0.12)
+                    Text {
+                      id: pkgCmdTxt
+                      anchors.centerIn: parent
+                      width: parent.width - Style.space(16)
+                      text: root.packagesCmd
+                      color: root.surfaceText; font.family: "monospace"; font.pixelSize: Style.font.caption - 1
+                      wrapMode: Text.Wrap
+                    }
+                  }
+                  Row {
+                    width: parent.width; spacing: Style.space(8)
+                    Button { text: "Open in terminal"; selected: true; fontFamily: root.ff; onClicked: root.openPackagesTerminal() }
+                    Button { text: "I've finished — continue"; bordered: true; fontFamily: root.ff; onClicked: root.retryPackages() }
+                  }
                 }
               }
 
