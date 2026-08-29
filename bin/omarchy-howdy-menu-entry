@@ -11,6 +11,10 @@
 
 set -euo pipefail
 
+if [[ $EUID -eq 0 && -z "${FACE_HOWDY_ALLOW_ROOT:-}" ]]; then
+  echo "ERROR: $0 must not run as root" >&2; exit 1
+fi
+
 PLUGIN_ID='face.howdy'
 EXT="${OMARCHY_MENU_EXTENSION:-$HOME/.config/omarchy/extensions/omarchy-menu.jsonc}"
 ROW_ID='setup.security.face-howdy'

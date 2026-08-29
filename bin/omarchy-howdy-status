@@ -6,6 +6,11 @@
 
 set -euo pipefail
 
+# Guard: this script edits/reads user config — running as root would touch /root.
+if [[ $EUID -eq 0 && -z "${FACE_HOWDY_ALLOW_ROOT:-}" ]]; then
+  echo "ERROR: $0 must not run as root (would touch /root/.config)" >&2; exit 1
+fi
+
 howdy_pkg()   { pacman -Q howdy-next-git &>/dev/null && echo yes || echo no; }
 leire_pkg()   { pacman -Q linux-enable-ir-emitter-git &>/dev/null && echo yes || echo no; }
 pam_howdy()   { grep -q "pam_howdy" /etc/pam.d/sudo 2>/dev/null && echo yes || echo no; }
@@ -25,6 +30,15 @@ enrolled() {
     return
   fi
   if sudo -n ls /etc/howdy/models/*.dat &>/dev/null 2>&1; then echo yes; else echo no; fi
+}
+
+ir_configured() {
+  local marker="/etc/omarchy/face-howdy/ir-configured"
+  if [[ -r "$marker" ]]; then
+    grep -qx "yes" "$marker" 2>/dev/null && echo yes || echo no
+    return
+  fi
+  echo no
 }
 
 # The active lock screen is whichever non-stock lock clone is enabled in the
@@ -57,6 +71,7 @@ echo "leire_pkg=$(leire_pkg)"
 echo "pam_howdy_sudo=$(pam_howdy)"
 echo "lock_pam=$(lock_pam)"
 echo "ir_udev=$(udev_rule)"
+echo "ir_config=$(ir_configured)"
 echo "models=$(models)"
 echo "enrolled=$(enrolled)"
 echo "active_lock=$(lock_active)"

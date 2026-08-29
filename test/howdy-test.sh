@@ -96,7 +96,33 @@ pass "restore clears face.howdy state"
 out="$("$PLUGIN_DIR/bin/omarchy-howdy-status")"
 grep -q "^howdy_pkg=" <<<"$out" || fail "status missing howdy_pkg"
 grep -q "^active_lock=" <<<"$out" || fail "status missing active_lock"
-pass "status script emits known keys"
+grep -q "^ir_config=" <<<"$out" || fail "status missing ir_config"
+pass "status script emits known keys (including ir_config)"
+
+# 5. Unprivileged scripts have EUID guard (must not run as root).
+for bin in omarchy-howdy-status omarchy-howdy-deploy-lock omarchy-howdy-restore-lock omarchy-howdy-menu-install omarchy-howdy-menu-entry; do
+  grep -q "EUID" "$PLUGIN_DIR/bin/$bin" || fail "missing EUID guard in $bin"
+done
+pass "unprivileged scripts have EUID guards"
+
+# 6. system/ contains only the lock patch (dead templates removed).
+remaining=$(find "$PLUGIN_DIR/system" -type f 2>/dev/null | sort)
+expected="$PLUGIN_DIR/system/lock-howdy.patch"
+[[ "$remaining" == "$expected" ]] || fail "system/ should contain only lock-howdy.patch, got: $remaining"
+pass "system/ contains only lock-howdy.patch"
+
+# 7. deploy/restore respect FACE_HOWDY_* overrides even when HOME=/root (regression for P1 root-HOME bug).
+HOME=/root FACE_HOWDY_SHELL_JSON="$HOME_W/.config/omarchy/shell.json" \
+  FACE_HOWDY_PLUGIN_ROOT="$HOME_W/.config/omarchy/plugins" \
+  FACE_HOWDY_STATE_DIR="$HOME_W/.local/state/face.howdy" \
+  "$PLUGIN_DIR/bin/omarchy-howdy-deploy-lock" >/dev/null 2>&1
+count=$(grep -c "property bool howdyConfigured: false" "$SEED_DIR/Service.qml" || true)
+[[ $count == 1 ]] || fail "HOME=/root deploy broke marker (count=$count)"
+HOME=/root FACE_HOWDY_SHELL_JSON="$HOME_W/.config/omarchy/shell.json" \
+  FACE_HOWDY_PLUGIN_ROOT="$HOME_W/.config/omarchy/plugins" \
+  FACE_HOWDY_STATE_DIR="$HOME_W/.local/state/face.howdy" \
+  "$PLUGIN_DIR/bin/omarchy-howdy-restore-lock" >/dev/null 2>&1
+pass "deploy/restore honor FACE_HOWDY_* overrides with HOME=/root"
 
 echo
 echo "All face.howdy tests passed."

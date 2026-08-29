@@ -106,7 +106,7 @@ Item {
     setupProc.phase = phase
     setupProc.collected = ""
     setupProc.command = ["pkexec", "/bin/bash", "--",
-      (root.pluginBin + "/omarchy-howdy-setup-system").replace(/'/g, "'\\''"), phase]
+      root.pluginBin + "/omarchy-howdy-setup-system", phase]
     setupProc.running = true
   }
   function beginTask(label) { root.installing = true; root.progressLabel = label; root.logText = ""; root.page = "install" }
@@ -131,6 +131,11 @@ Item {
     lockProc.command = ["/bin/bash", "-c", root.tool("omarchy-howdy-deploy-lock")]
     lockProc.running = true
   }
+  function restoreLock() {
+    restoreLockProc.collected = ""
+    restoreLockProc.command = ["/bin/bash", "-c", root.tool("omarchy-howdy-restore-lock")]
+    restoreLockProc.running = true
+  }
 
   // --------------------------------------------------------------- face
   function enrollFace() { root.intent = "enroll";    root.beginTask("enroll"); root.runUserCmd("sudo howdy add 2>&1 || true; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; echo 'done: enroll'") }
@@ -147,9 +152,9 @@ Item {
   function startRemove(keepPkgs) {
     root.intent = "remove"; root.installComplete = false; root.beginTask("remove")
     removeProc.collected = ""
-    removeProc.command = ["pkexec", "/bin/bash", "--", "-c",
-      "'" + root.pluginBin + "/omarchy-howdy-teardown-system' " + (keepPkgs ? "keep-pkgs" : "delete-pkgs") +
-      " 2>&1; echo '---'; '" + root.pluginBin + "/omarchy-howdy-restore-lock' 2>&1; echo 'remove:done'"]
+    removeProc.keepPkgs = keepPkgs
+    removeProc.command = ["pkexec", "/bin/bash", "--",
+      root.pluginBin + "/omarchy-howdy-teardown-system", keepPkgs ? "keep-pkgs" : "delete-pkgs"]
     removeProc.running = true
   }
 
@@ -196,6 +201,8 @@ Item {
   function blockingStep() {
     if (!root.installed())        return ""
     if (!root.pamDeployed())      return "PAM isn't wired yet — deploy it to enable face unlock"
+    if (!root.yes(root.status.ir_udev)) return "IR emitter not configured — re-run Install to set up the udev rule"
+    if (!root.yes(root.status.ir_config)) return "IR emitter not calibrated — run: sudo linux-enable-ir-emitter configure"
     if (!root.yes(root.status.enrolled)) return "No face enrolled yet — add one to activate unlock"
     return ""
   }
@@ -207,6 +214,7 @@ Item {
     add("PAM (sudo)",     "pam_howdy_sudo")
     add("Lock PAM",       "lock_pam")
     add("IR emitter",     "ir_udev")
+    add("IR calibrated",  "ir_config")
     add("Face models",    "models")
     add("Face enrolled",  "enrolled")
     var lockName = String(s.active_lock || "stock")
@@ -266,10 +274,21 @@ Item {
     onExited: { root.logText += lockProc.collected; root.scheduleShellRestart() }
   }
   Process {
-    id: removeProc; property string collected: ""
-    command: ["pkexec", "/bin/bash", "--", "-c", "true"]
-    stdout: SplitParser { onRead: function(data) { removeProc.collected += data + "\n" } }
-    onExited: { root.logText += removeProc.collected; root.onSetupDone(exitCode === 0) }
+    id: removeProc; property string collected: ""; property bool keepPkgs: true
+    command: ["pkexec", "/bin/bash", "--", "true"]
+    stdout: SplitParser { onRead: function(data) { removeProc.collected += data + "\n"; root.logText += data + "\n" } }
+    onExited: {
+      root.logText += removeProc.collected
+      if (exitCode !== 0) { root.logText += "Error: teardown failed.\n"; root.failTask(); return }
+      // Teardown succeeded — now restore the stock lock screen as the unprivileged user.
+      root.restoreLock()
+    }
+  }
+  Process {
+    id: restoreLockProc; property string collected: ""
+    command: ["/bin/bash", "-c", "true"]
+    stdout: SplitParser { onRead: function(data) { restoreLockProc.collected += data + "\n" } }
+    onExited: { root.logText += restoreLockProc.collected; root.finishSetup(); root.scheduleShellRestart() }
   }
 
   // ================================================================ window

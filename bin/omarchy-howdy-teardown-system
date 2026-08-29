@@ -60,10 +60,7 @@ udevadm control --reload-rules 2>/dev/null || true
 # --------------------------------------------------------------------------
 if [[ "$MODE" == "delete-pkgs" ]]; then
   rm -rf /etc/howdy
-  if [[ -d /usr/share/howdy/models ]]; then
-    rm -f /usr/share/howdy/models/*.dat 2>/dev/null || true
-  fi
-  msg "Removed /etc/howdy and face models."
+  msg "Removed /etc/howdy and face data."
 
   if command -v omarchy-pkg-drop &>/dev/null; then
     omarchy-pkg-drop howdy-next-git linux-enable-ir-emitter-git 2>/dev/null || true
@@ -74,8 +71,8 @@ else
   msg "Kept howdy packages + models (re-enable reuses them instantly)."
 fi
 
-# Drop the enrollment marker so status no longer reports a face.
-rm -f /etc/omarchy/face-howdy/enrolled 2>/dev/null || true
+# Drop status markers so the GUI no longer reports stale state.
+rm -f /etc/omarchy/face-howdy/enrolled /etc/omarchy/face-howdy/ir-configured 2>/dev/null || true
 rmdir /etc/omarchy/face-howdy 2>/dev/null || true
 
 exit 0

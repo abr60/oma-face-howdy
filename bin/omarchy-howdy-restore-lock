@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+if [[ $EUID -eq 0 && -z "${FACE_HOWDY_ALLOW_ROOT:-}" ]]; then
+  echo "ERROR: $0 must not run as root (would touch /root/.config)" >&2; exit 1
+fi
+
 SHELL_JSON="${FACE_HOWDY_SHELL_JSON:-$HOME/.config/omarchy/shell.json}"
 STATE_DIR="${FACE_HOWDY_STATE_DIR:-$HOME/.local/state/face.howdy}"
 

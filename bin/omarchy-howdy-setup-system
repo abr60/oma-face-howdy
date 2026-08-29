@@ -117,12 +117,16 @@ phase_ir() {
     return 1
   fi
 
-  # Detect the IR camera (a v4l device exposing GREY/YUV - the IR sensor).
+  # Detect the IR camera (prefer stable by-path symlink, fall back to /dev/video* scan).
   local IR_DEVICE=""
-  local STABLE_PATH="/dev/v4l/by-path/pci-0000:00:14.0-usb-0:4:1.2-video-index0"
-  if [[ -e "$STABLE_PATH" ]] && v4l2-ctl --device="$STABLE_PATH" --list-formats 2>/dev/null | grep -qi grey; then
-    IR_DEVICE="$STABLE_PATH"
-  else
+  for dev in /dev/v4l/by-path/*video-index0; do
+    [[ -e "$dev" ]] || continue
+    if v4l2-ctl --device="$dev" --list-formats 2>/dev/null | grep -qi grey; then
+      IR_DEVICE="$dev"
+      break
+    fi
+  done
+  if [[ -z "$IR_DEVICE" ]]; then
     for dev in /dev/video*; do
       [[ -e "$dev" ]] || continue
       if v4l2-ctl --device="$dev" --list-formats 2>/dev/null | grep -qi grey; then
@@ -197,6 +201,14 @@ EOF
   udevadm control --reload-rules 2>/dev/null || true
   udevadm trigger --subsystem-match=video4linux --action=add 2>/dev/null || true
   systemctl start ir-emitter.service 2>/dev/null || true
+
+  if compgen -G "/root/.config/linux-enable-ir-emitter*.toml" >/dev/null 2>&1; then
+    echo "IR_CONFIG=yes"
+  else
+    echo "IR_CONFIG=no"
+    msg "IR emitter not yet calibrated — run in a terminal: sudo linux-enable-ir-emitter configure"
+    msg "Then re-run this IR step to refresh status."
+  fi
 
   echo "IR_DEVICE=$IR_DEVICE"
   return 0

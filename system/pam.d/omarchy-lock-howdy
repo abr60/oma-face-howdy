@@ -1,3 +1,0 @@
-#%PAM-1.0
-auth       required                    pam_howdy.so
-account    include                     system-local-login

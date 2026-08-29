@@ -15,8 +15,8 @@ IR-camera face recognition to:
   like Windows Hello, or just hit Enter)
 
 Everything the plugin needs is bundled in this plugin: the Quickshell wizard
-(Service.qml), the privileged setup/teardown scripts under `bin/`, the PAM and
-systemd templates under `system/`, and the tests under `test/`. There is **no
+(Service.qml), the privileged setup/teardown scripts under `bin/`, the
+lock-screen patch under `system/`, and the tests under `test/`. There is **no
 dependency on Omarchy source** — any Omarchy user with an IR (infrared) camera
 can install it.
 
@@ -63,6 +63,17 @@ License: [MIT](LICENSE).
 - An AUR helper (`yay`, `paru`, or Omarchy's `omarchy-pkg-aur-add`) to build
   `howdy-next-git` and `linux-enable-ir-emitter-git` on first install.
 - `v4l-utils` (auto-installed).
+
+On first install the IR emitter must be calibrated once in a terminal:
+
+```sh
+sudo linux-enable-ir-emitter configure
+```
+
+The wizard's IR step writes the udev rule and systemd services; if the emitter
+is uncalibrated the status screen shows "IR calibrated: Not set" with this
+instruction, and `sudo linux-enable-ir-emitter run` is still triggered on
+every Howdy auth as a fallback.
 
 ## Installation
 
