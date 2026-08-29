@@ -150,10 +150,31 @@ Item {
     Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
     root.logText = "Opened terminal for face enrollment — follow the prompts there, then return here."
   }
-  function testFace() {
+  function openTestTerminal() {
     var cmd = "sudo howdy test; echo; echo '[face.howdy] test finished — press Enter to close'; read -p 'Press Enter to close'"
     Util.execDetached("omarchy-launch-terminal bash -lc " + Util.shellQuote(cmd))
     root.logText = "Opened terminal for recognition test — results appear there."
+  }
+  function testFace() {
+    // Option A: try in-window GUI preview via pkexec + display env injection.
+    // howdy-next drops root→invoking user before opening the OpenCV window, so
+    // no xhost dance is needed — just preserve DISPLAY/Wayland creds. Falls
+    // back to terminal if no graphical environment is detected.
+    var envArgs = []
+    var d = Quickshell.env("DISPLAY")
+    var w = Quickshell.env("WAYLAND_DISPLAY")
+    var r = Quickshell.env("XDG_RUNTIME_DIR")
+    var xa = Quickshell.env("XAUTHORITY")
+    if (d)  envArgs.push("DISPLAY=" + d)
+    if (w)  envArgs.push("WAYLAND_DISPLAY=" + w)
+    if (r)  envArgs.push("XDG_RUNTIME_DIR=" + r)
+    if (xa) envArgs.push("XAUTHORITY=" + xa)
+    if (envArgs.length === 0) { root.openTestTerminal(); return }
+    testProc.collected = ""
+    var cmd = ["pkexec", "env"].concat(envArgs).concat(["/usr/bin/howdy", "test"])
+    testProc.command = cmd
+    testProc.running = true
+    root.logText = "Opening recognition preview… press Q in the preview window to close it."
   }
   function removeFace() {
     root.intent = "clearFace"; root.beginTask("clear")
@@ -307,6 +328,29 @@ Item {
       }
       if (exitCode !== 0) root.logText += "Error: step failed.\n"
       root.onSetupDone(exitCode === 0)
+    }
+  }
+  Process {
+    id: testProc; property string collected: ""
+    command: ["pkexec", "env", "/usr/bin/howdy", "test"]
+    stdout: SplitParser { onRead: function(data) { testProc.collected += data + "\n"; root.logText += data + "\n" } }
+    stderr: SplitParser { onRead: function(data) { testProc.collected += data + "\n"; root.logText += data + "\n" } }
+    onExited: {
+      var out = String(testProc.collected)
+      var noDisplay = out.indexOf("no graphical display") !== -1
+                    || out.indexOf("Cannot open the interactive test preview") !== -1
+      if (noDisplay) {
+        root.logText += "\n[face.howdy] No display reachable — falling back to terminal.\n"
+        root.openTestTerminal()
+        return
+      }
+      if (exitCode !== 0 && out.trim() === "") {
+        // pkexec cancelled or silent failure — don't spam terminal fallback
+        root.logText += "Test closed (code " + exitCode + ").\n"
+        return
+      }
+      if (exitCode !== 0) root.logText += "Test exited (code " + exitCode + ").\n"
+      else root.logText += "Test finished — press Q in the preview to reopen, or close this panel.\n"
     }
   }
   Process {
@@ -1230,7 +1274,7 @@ Item {
               }
               Text {
                 width: parent.width
-                text: "Add opens Howdy's terminal UI. Test runs a recognition check. Clear removes all enrolled faces."
+                text: "Add opens terminal enrollment. Test pops a live camera preview — press Q to close. Clear removes all faces."
                 color: root.muted; font.family: root.ff; font.pixelSize: Style.font.caption
                 wrapMode: Text.WordWrap; lineHeight: 1.45
               }
