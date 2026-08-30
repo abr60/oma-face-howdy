@@ -177,7 +177,9 @@ grep -q '"Run manually"' "$q" || fail "ir_config cell should say 'Run manually',
 grep -q 'text: "Status details"' "$q" || fail "Status details should be a button"
 grep -q 'text: "Back"' "$q" || fail "Back button should have no arrow"
 grep -q 'Style.space(460)' "$q" || fail "card width should be 460"
-for gone in '← Back' 'or manage face data →' 'Status details →' 'deployBtn' 'startDeployPam' 'page === "confirm"' 'import Quickshell.Wayland' 'id: pillTxt'; do
+grep -q 'import Quickshell.Wayland' "$q" || fail "Wayland import required for WlrLayershell attached object"
+grep -q 'WlrLayershell.namespace' "$q" || fail "overlay must use WlrLayershell for the panel layer"
+for gone in '← Back' 'or manage face data →' 'Status details →' 'deployBtn' 'startDeployPam' 'page === "confirm"' 'id: pillTxt'; do
   if grep -qF -- "$gone" "$q"; then fail "stale UI remnant still present: $gone"; fi
 done
 pass "UI design-review pass applied (arm-to-confirm clear, slim footer, no stale UI)"
