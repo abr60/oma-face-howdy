@@ -210,7 +210,8 @@ Item {
   }
   function removeFace() {
     root.intent = "clearFace"; root.beginTask("clear")
-    root.runUserCmd("sudo howdy clear -y 2>&1; rc=$?; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; exit $rc")
+    // Already root via pkexec — no sudo (sudo inside pkexec has no TTY and fails when cache cold).
+    root.runUserCmd("howdy clear -y 2>&1; rc=$?; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; exit $rc")
   }
   function runUserCmd(cmd) {
     root.nextQuote()
