@@ -152,6 +152,7 @@ grep -q 'No face models found' "$PLUGIN_DIR/Service.qml" || fail "Clear should t
 grep -q 'lastError' "$PLUGIN_DIR/Service.qml" || fail "Service.qml should expose lastError for visible errors"
 grep -q 'howdy.*clear.*-y' "$PLUGIN_DIR/Service.qml" || fail "Clear should run howdy clear -y via pkexec"
 # Must not still use stale setupProc/runUserCmd sudo-in-pkexec path for clear
+if grep -q 'function runUserCmd' "$PLUGIN_DIR/Service.qml"; then fail "runUserCmd (dead since Clear moved to clearProc) should be removed"; fi
 if grep -q 'runUserCmd.*howdy clear' "$PLUGIN_DIR/Service.qml"; then fail "Clear still uses stale runUserCmd/sudo path"; fi
 pass "Clear is idempotent (No models -> success) and errors visible via lastError"
 
@@ -165,6 +166,21 @@ if grep -q 'find /home' "$PLUGIN_DIR/bin/omarchy-howdy-teardown-system"; then
   grep -q 'maxdepth 5' "$PLUGIN_DIR/bin/omarchy-howdy-teardown-system" || fail "teardown find must be bounded by maxdepth"
 fi
 pass "teardown delete-pkgs purges yay + pacman cache with no leftovers"
+
+# 13. UI design-review pass applied (arm-to-confirm Clear, reduced footer, cleanup).
+q="$PLUGIN_DIR/Service.qml"
+grep -q 'clearArmed' "$q" || fail "Clear should use arm-to-confirm state (clearArmed)"
+grep -q 'Click again to confirm' "$q" || fail "Clear should arm with an explicit confirm message"
+grep -q 'clearTimer' "$q" || fail "Clear arm should auto-disarm via clearTimer"
+grep -q 'failingCells' "$q" || fail "attention grid should show only failing cells"
+grep -q '"Run manually"' "$q" || fail "ir_config cell should say 'Run manually', not 'Not set'"
+grep -q 'text: "Status details"' "$q" || fail "Status details should be a button"
+grep -q 'text: "Back"' "$q" || fail "Back button should have no arrow"
+grep -q 'Style.space(460)' "$q" || fail "card width should be 460"
+for gone in '← Back' 'or manage face data →' 'Status details →' 'deployBtn' 'startDeployPam' 'page === "confirm"' 'import Quickshell.Wayland' 'id: pillTxt'; do
+  if grep -qF -- "$gone" "$q"; then fail "stale UI remnant still present: $gone"; fi
+done
+pass "UI design-review pass applied (arm-to-confirm clear, slim footer, no stale UI)"
 
 echo
 echo "All face.howdy tests passed."

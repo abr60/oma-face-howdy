@@ -1,6 +1,5 @@
 import Quickshell
 import Quickshell.Io
-import Quickshell.Wayland
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -44,6 +43,7 @@ Item {
   property var quotes: []
   property string enrollLabel: ""
   property bool enrolling: false
+  property bool clearArmed: false
   property string lastError: ""
 
   // ------------------------------------------------------------------ style
@@ -61,7 +61,7 @@ Item {
   property  string ff:        Style.font.menuFamily
   property  int cm:           Style.spacing.panelPadding
   property  int sp:           Style.spacing.md
-  property  int cardW:        Math.min(Style.space(440), panel.width  - Style.gapsOut * 2)
+  property  int cardW:        Math.min(Style.space(460), panel.width  - Style.gapsOut * 2)
   property  int cardH:        Math.min(Style.space(580), panel.height - Style.gapsOut * 2)
   property  int btnH:         Math.max(Style.space(34), Style.font.body + Style.spacing.controlPaddingY)
 
@@ -110,7 +110,6 @@ Item {
 
   // -------------------------------------------------------------- install
   function startInstall()   { root.intent = "install";   root.installComplete = false; root.beginTask("packages"); root.runPhase("packages") }
-  function startDeployPam() { root.intent = "deployPam"; root.installComplete = false; root.beginTask("pam");      root.runPhase("pam") }
   function runPhase(phase) {
     root.nextQuote()
     setupProc.phase = phase
@@ -129,7 +128,6 @@ Item {
         case "models":   root.progressLabel = "pam";    root.runPhase("pam");    return
         case "pam":      root.finishSetup(); root.deployLock(); return
       }
-    } else if (root.intent === "deployPam") { root.finishSetup(); root.deployLock(); return
     } else if (root.intent === "remove")    { root.finishSetup(); root.scheduleShellRestart(); return
     } else { root.finishSetup(); return }
   }
@@ -164,6 +162,8 @@ Item {
     // Headless in-UI enrollment: no terminal. howdy add --plain -y skips the
     // label prompt, captures directly (2s delay + up to 60 frames, no preview).
     // Keep the overlay visible so the user sees progress/logs.
+    if (root.enrolling) return
+    if (root.clearArmed) { root.clearArmed = false; clearTimer.stop() }
     var label = String(root.enrollLabel || "").trim()
     if (label.length > 24) label = label.slice(0, 24)
     // Basic label sanity: howdy rejects path-unsafe chars; keep it simple.
@@ -215,12 +215,6 @@ Item {
     clearProc.collected = ""
     clearProc.command = ["pkexec", "/usr/bin/howdy", "clear", "-y"]
     clearProc.running = true
-  }
-  function runUserCmd(cmd) {
-    root.nextQuote()
-    setupProc.phase = cmd; setupProc.collected = ""
-    setupProc.command = ["pkexec", "/bin/bash", "--", "-c", cmd]
-    setupProc.running = true
   }
 
   // ---------------------------------------------------------------- remove
@@ -281,9 +275,21 @@ Item {
     if (!root.yes(root.status.enrolled)) return "No face enrolled yet — add one to activate unlock"
     return ""
   }
+  function failingCells() {
+    var arr = []
+    for (var i = 0; i < root.cellModel.length; i++)
+      if (!root.cellModel[i].okay) arr.push(root.cellModel[i])
+    return arr
+  }
   function statusCells() {
     var s = root.status, arr = []
-    function add(label, key) { arr.push({ label: label, value: root.yes(s[key]) ? "Enabled" : "Not set", okay: root.yes(s[key]) }) }
+    function add(label, key) {
+      var ok = root.yes(s[key])
+      // IR calibration can't be fixed from the wizard (manual terminal step) —
+      // say so in the cell instead of a generic "Not set".
+      var value = ok ? "Enabled" : (key === "ir_config" ? "Run manually" : "Not set")
+      arr.push({ label: label, value: value, okay: ok })
+    }
     add("Howdy package",  "howdy_pkg")
     add("IR emitter pkg", "leire_pkg")
     add("PAM (sudo)",     "pam_howdy_sudo")
@@ -309,7 +315,6 @@ Item {
   }
   function primaryLabel() {
     if (root.page === "install") return root.installComplete ? "Done" : "Working…"
-    if (root.page === "confirm") return "Deploy PAM"
     if (root.installing)         return "Working…"
     if (!root.installed())       return "Install"
     if (root.needsAttention()) {
@@ -322,7 +327,7 @@ Item {
   }
   function primaryVisible() {
     if (root.page === "status") return root.installed() && !root.installing
-    return root.page === "install" || root.page === "confirm"
+    return root.page === "install"
   }
   function primaryAction() {
     switch (root.page) {
@@ -340,7 +345,6 @@ Item {
       case "install":
         if (root.installComplete) { root.page = "status"; root.installComplete = false; return }
         return
-      case "confirm": root.startDeployPam(); return
     }
   }
 
@@ -481,6 +485,13 @@ Item {
     onExited: { root.logText += restoreLockProc.collected; root.finishSetup(); root.scheduleShellRestart() }
   }
 
+  // Arm-to-confirm reset for Clear faces — auto-disarms if not confirmed.
+  Timer {
+    id: clearTimer
+    interval: 4000
+    onTriggered: root.clearArmed = false
+  }
+
   // ================================================================ window
   PanelWindow {
     id: panel
@@ -615,7 +626,6 @@ Item {
                 }
 
                 Text {
-                  id: pillTxt
                   text: root.fullyActive() ? "Active" : (root.needsAttention() ? "Almost there" : "Not set up")
                   color: {
                     if (root.fullyActive())    return root.accent
@@ -798,7 +808,7 @@ Item {
                     spacing: Style.space(3)
                     Text {
                       text: "Almost there"
-                      color: root.warn; font.family: root.ff; font.pixelSize: Style.font.body; font.bold: true
+                      color: root.surfaceText; font.family: root.ff; font.pixelSize: Style.font.body; font.bold: true
                     }
                     Text {
                       width: parent.width
@@ -809,13 +819,14 @@ Item {
                   }
                 }
 
-                // Cell grid
+                // Cell grid — only the things that AREN'T good. The banner
+                // already names the blocker; showing 8 green cells is noise.
                 Grid {
                   width: parent.width; columns: 2; spacing: Style.space(6)
                   Repeater {
-                    model: root.cellModel
+                    model: root.failingCells()
                     delegate: MiniCell {
-                      width: (parent.width - Style.space(6)) / 2
+                      width: (root.failingCells().length === 1) ? parent.width : (parent.width - Style.space(6)) / 2
                       label: modelData.label; good: modelData.okay; valueText: modelData.value
                     }
                   }
@@ -836,18 +847,6 @@ Item {
                       root.page = "facelist"
                   }
                 }
-                Text {
-                  width: parent.width
-                  text: "or manage face data →"
-                  color: Util.alpha(root.muted, 0.5)
-                  font.family: root.ff; font.pixelSize: Style.font.caption
-                  horizontalAlignment: Text.AlignHCenter
-                  visible: !root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models)
-                  MouseArea {
-                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                    onClicked: root.page = "facelist"
-                  }
-                }
               }
 
               // --- Fully active ---
@@ -859,14 +858,13 @@ Item {
                 Item {
                   width: parent.width; height: Style.space(100)
 
-                  // Outer ring — subtle, large
+                  // Soft glow — large translucent disc behind the ring (bloom feel,
+                  // no radial gradient needed)
                   Rectangle {
-                    width: Style.space(84); height: Style.space(84)
+                    width: Style.space(96); height: Style.space(96)
                     radius: width / 2
                     anchors.centerIn: parent
-                    color: "transparent"
-                    border.width: Math.max(1, Style.space(1))
-                    border.color: Util.alpha(root.accent, 0.15)
+                    color: Util.alpha(root.accent, 0.06)
                   }
 
                   // Inner ring — main
@@ -903,62 +901,46 @@ Item {
                   }
                 }
 
-                // Status row — horizontal strip of labeled dots
-                Rectangle {
-                  width: parent.width
-                  height: Style.space(38)
-                  radius: root.r
-                  color: Util.alpha(root.accent, 0.04)
-                  border.width: Math.max(1, Style.space(1))
-                  border.color: Util.alpha(root.accent, 0.12)
+                // Status chips — floating, centered, no container box
+                Row {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  spacing: Style.space(14)
 
-                  Row {
-                    anchors.centerIn: parent
-                    spacing: Style.space(14)
+                  Repeater {
+                    model: [
+                      { label: "Howdy",      key: "howdy_pkg" },
+                      { label: "IR",         key: "leire_pkg" },
+                      { label: "PAM",        key: "pam_howdy_sudo" },
+                      { label: "Lock",       key: "lock_pam" },
+                      { label: "Face",       key: "enrolled" }
+                    ]
+                    delegate: Row {
+                      spacing: Style.space(5)
+                      anchors.verticalCenter: parent.verticalCenter
+                      property bool ok: root.yes(root.status[modelData.key])
 
-                    Repeater {
-                      model: [
-                        { label: "Howdy",      key: "howdy_pkg" },
-                        { label: "IR",         key: "leire_pkg" },
-                        { label: "PAM",        key: "pam_howdy_sudo" },
-                        { label: "Lock",       key: "lock_pam" },
-                        { label: "Face",       key: "enrolled" }
-                      ]
-                      delegate: Row {
-                        spacing: Style.space(5)
+                      Rectangle {
+                        width: Style.space(6); height: Style.space(6)
+                        radius: width / 2
                         anchors.verticalCenter: parent.verticalCenter
-                        property bool ok: root.yes(root.status[modelData.key])
-
-                        Rectangle {
-                          width: Style.space(6); height: Style.space(6)
-                          radius: width / 2
-                          anchors.verticalCenter: parent.verticalCenter
-                          color: ok ? root.accent : Util.alpha(root.muted, 0.3)
-                        }
-                        Text {
-                          text: modelData.label
-                          color: ok ? root.surfaceText : root.muted
-                          font.family: root.ff; font.pixelSize: Style.font.caption
-                          font.bold: ok
-                        }
+                        color: ok ? root.accent : Util.alpha(root.muted, 0.3)
+                      }
+                      Text {
+                        text: modelData.label
+                        color: ok ? root.surfaceText : root.muted
+                        font.family: root.ff; font.pixelSize: Style.font.caption
+                        font.bold: ok
                       }
                     }
                   }
                 }
 
-                // Details link — subtle text button
-                Text {
+                // Details — full-width bordered button so it's unmissable
+                Button {
                   width: parent.width
-                  text: "Status details →"
-                  color: Util.alpha(root.accent, 0.6)
-                  font.family: root.ff; font.pixelSize: Style.font.caption
-                  horizontalAlignment: Text.AlignHCenter
-                  MouseArea {
-                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                    onClicked: root.page = "details"
-                    onPressed:  parent.color = root.accent
-                    onReleased: parent.color = Util.alpha(root.accent, 0.6)
-                  }
+                  text: "Status details"
+                  bordered: true; fontFamily: root.ff
+                  onClicked: root.page = "details"
                 }
               }
             }
@@ -1029,7 +1011,7 @@ Item {
                       GradientStop { position: 0.0; color: "transparent" }
                       GradientStop { position: 1.0; color: Util.alpha("#ffffff", 0.25) }
                     }
-                    visible: root.installing
+visible: root.installing && !root.packagesNeedsTerminal
                   }
                 }
               }
@@ -1125,7 +1107,7 @@ Item {
 
                 Rectangle {
                   anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-                  width: Style.space(2); color: Util.alpha(root.accent, 0.35); radius: root.r
+                  width: Style.space(3); color: Util.alpha(root.accent, 0.35)
                 }
 
                 Text {
@@ -1202,12 +1184,12 @@ Item {
                 border.color: Util.alpha(root.muted, 0.1)
                 clip: true
 
-                // Top fade mask
+                // Top fade mask — start alpha must match the log background (0.75)
                 Rectangle {
                   anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
                   height: Style.space(12); z: 1
                   gradient: Gradient {
-                    GradientStop { position: 0.0; color: Util.alpha(Color.background, 0.7) }
+                    GradientStop { position: 0.0; color: Util.alpha(Color.background, 0.75) }
                     GradientStop { position: 1.0; color: "transparent" }
                   }
                 }
@@ -1237,51 +1219,6 @@ Item {
               }
             }
 
-            // ==== CONFIRM page ====
-            Column {
-              visible: root.page === "confirm"
-              anchors.fill: parent; spacing: root.sp
-
-              Text {
-                text: "Deploy PAM?"
-                color: root.surfaceText; font.family: root.ff; font.pixelSize: Style.font.title; font.bold: true
-              }
-
-              // Info block — left bar, no icon glyph
-              Rectangle {
-                width: parent.width
-                height: confirmTxt.implicitHeight + Style.space(28)
-                radius: root.r
-                color: Util.alpha(root.accent, 0.04)
-                border.width: Math.max(1, Style.space(1))
-                border.color: Util.alpha(root.accent, 0.15)
-                clip: true
-
-                Rectangle {
-                  anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-                  width: Style.space(3); color: root.accent
-                }
-
-                Text {
-                  id: confirmTxt
-                  anchors.verticalCenter: parent.verticalCenter
-                  anchors.left: parent.left; anchors.leftMargin: Style.space(16)
-                  anchors.right: parent.right; anchors.rightMargin: Style.space(16)
-                  text: "Adds pam_howdy to sudo, SDDM and polkit. Patches your lock screen to unlock on lid open. Password stays as fallback."
-                  color: root.surfaceText; font.family: root.ff; font.pixelSize: Style.font.body
-                  wrapMode: Text.WordWrap; lineHeight: 1.5
-                }
-              }
-
-              // Note
-              Text {
-                width: parent.width
-                text: "A pkexec authorisation prompt will appear."
-                color: Util.alpha(root.muted, 0.6)
-                font.family: root.ff; font.pixelSize: Style.font.caption; font.italic: true
-              }
-            }
-
             // ==== REMOVE page ====
             Column {
               visible: root.page === "remove"
@@ -1291,7 +1228,7 @@ Item {
                 width: parent.width; spacing: Style.space(6); topPadding: Style.space(4)
                 Text {
                   width: parent.width; text: "Remove Face Howdy?"
-                  color: root.urgent; font.family: root.ff; font.pixelSize: Style.font.title; font.bold: true
+                  color: root.surfaceText; font.family: root.ff; font.pixelSize: Style.font.title; font.bold: true
                   horizontalAlignment: Text.AlignHCenter
                 }
                 Text {
@@ -1384,6 +1321,17 @@ Item {
                   }
                 }
               }
+
+              // Watermark — fills the empty space below the cards
+              Item {
+                width: parent.width; height: Style.space(60)
+                FaceHowdyIcon {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  anchors.verticalCenter: parent.verticalCenter
+                  iconSize: Style.space(48)
+                  color: Util.alpha(root.urgent, 0.06)
+                }
+              }
             }
 
             // ==== FACELIST page ====
@@ -1455,9 +1403,24 @@ Item {
                   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.enrollFaceTerminal() }
                 }
                 Button { text: "Test recognition"; bordered: true; width: parent.width; fontFamily: root.ff; onClicked: root.testFace() }
-                Button {
-                  text: "Clear faces"; bordered: true; foreground: root.urgent
-                  width: parent.width; fontFamily: root.ff; onClicked: root.removeFace()
+                // Clear faces — destructive + rare, so a dim text link with
+                // arm-to-confirm (click → "click again", auto-disarms in 4s)
+                // instead of a full button at the same level as Add/Test.
+                Text {
+                  width: parent.width
+                  text: root.clearArmed ? "Click again to confirm — removes all faces" : "Clear faces"
+                  color: root.clearArmed ? root.urgent : Util.alpha(root.muted, 0.5)
+                  font.family: root.ff; font.pixelSize: Style.font.caption; font.bold: root.clearArmed
+                  horizontalAlignment: Text.AlignHCenter
+                  visible: !root.enrolling
+                  Behavior on color { ColorAnimation { duration: 150 } }
+                  MouseArea {
+                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                      if (root.clearArmed) { root.clearArmed = false; clearTimer.stop(); root.removeFace() }
+                      else { root.clearArmed = true; clearTimer.start() }
+                    }
+                  }
                 }
               }
 
@@ -1495,8 +1458,8 @@ Item {
             width: parent.width; height: root.btnH; spacing: root.sp
 
             Button {
-              id: backBtn; text: "← Back"; bordered: true; fontFamily: root.ff
-              visible: root.page === "facelist" || root.page === "remove" || root.page === "confirm" || root.page === "details"
+              id: backBtn; text: "Back"; bordered: true; fontFamily: root.ff
+              visible: root.page === "facelist" || root.page === "remove" || root.page === "details"
               onClicked: root.page = "status"
             }
             Button {
@@ -1510,16 +1473,10 @@ Item {
               width: footerRow.width
                 - (backBtn.visible   ? backBtn.width   + root.sp : 0)
                 - (removeBtn.visible ? removeBtn.width + root.sp : 0)
-                - (deployBtn.visible ? deployBtn.width + root.sp : 0)
                 - (faceDataBtn.visible ? faceDataBtn.width + root.sp : 0)
                 - (primaryBtn.visible ? primaryBtn.width + root.sp : 0)
             }
 
-            Button {
-              id: deployBtn; text: "Deploy PAM"; bordered: true; fontFamily: root.ff
-              visible: root.page === "status" && root.installed() && !root.pamDeployed() && !root.installing
-              onClicked: root.page = "confirm"
-            }
             Button {
               id: faceDataBtn; text: "Face data"; bordered: true; fontFamily: root.ff
               visible: root.page === "status" && root.installed() && !root.installing
@@ -1556,9 +1513,11 @@ Item {
       color: mc.good ? Util.alpha(root.accent, 0.2) : Util.alpha(root.muted, 0.1)
     }
 
-    // Left accent bar — replaces LED circle, no glyph needed
+    // Left accent bar — floats inside the cell so it doesn't collide
+    // with the clipped rounded corners (looks intentional)
     Rectangle {
       anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+      anchors.topMargin: Style.space(4); anchors.bottomMargin: Style.space(4)
       width: Style.space(3)
       color: mc.good ? Util.alpha(root.accent, 0.7) : Util.alpha(root.muted, 0.2)
       Behavior on color { ColorAnimation { duration: 120 } }
