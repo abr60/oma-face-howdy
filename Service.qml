@@ -44,6 +44,7 @@ Item {
   property var quotes: []
   property string enrollLabel: ""
   property bool enrolling: false
+  property string lastError: ""
 
   // ------------------------------------------------------------------ style
   readonly property color surfaceColor: Color.polkit.background
@@ -209,9 +210,11 @@ Item {
     root.dismiss()
   }
   function removeFace() {
-    root.intent = "clearFace"; root.beginTask("clear")
-    // Already root via pkexec — no sudo (sudo inside pkexec has no TTY and fails when cache cold).
-    root.runUserCmd("howdy clear -y 2>&1; rc=$?; '" + root.pluginBin + "/omarchy-howdy-refresh-state' 2>/dev/null; exit $rc")
+    root.lastError = ""
+    root.logText = "Clearing face models…"
+    clearProc.collected = ""
+    clearProc.command = ["pkexec", "/usr/bin/howdy", "clear", "-y"]
+    clearProc.running = true
   }
   function runUserCmd(cmd) {
     root.nextQuote()
@@ -420,6 +423,37 @@ Item {
     onExited: root.refreshStatus()
   }
   Process {
+    id: clearProc; property string collected: ""
+    command: ["pkexec", "/usr/bin/howdy", "clear", "-y"]
+    stdout: SplitParser { onRead: function(data) { clearProc.collected += data + "\n"; root.logText += data + "\n" } }
+    stderr: SplitParser { onRead: function(data) { clearProc.collected += data + "\n"; root.logText += data + "\n" } }
+    onExited: {
+      var out = String(clearProc.collected)
+      var noModels = out.indexOf("No face models found") !== -1
+      if (exitCode === 0 || noModels) {
+        if (noModels) root.logText += "\n[face.howdy] No models — already clear.\n"
+        else root.logText += "\n[face.howdy] Face models cleared.\n"
+        root.lastError = ""
+        clearRefreshProc.command = ["pkexec", root.pluginBin + "/omarchy-howdy-refresh-state"]
+        clearRefreshProc.running = true
+        // refreshStatus also triggered by clearRefreshProc; extra immediate refresh is fine
+        root.refreshStatus()
+        return
+      }
+      if (exitCode !== 0 && out.trim() === "") {
+        root.logText += "Clear cancelled or failed (code " + exitCode + ").\n"
+        root.lastError = "Clear cancelled (code " + exitCode + ")."
+        return
+      }
+      root.logText += "Clear failed (code " + exitCode + ").\n"
+      root.lastError = out.trim().split("\n").pop() || ("Clear failed (code " + exitCode + ").")
+    }
+  }
+  Process {
+    id: clearRefreshProc; command: ["pkexec", "/bin/bash", "-c", "true"]
+    onExited: root.refreshStatus()
+  }
+  Process {
     id: quotesProc; command: ["cat", "/dev/null"]
     stdout: SplitParser { onRead: function(data) { root.quotes = String(data).split("\n").filter(Boolean) } }
   }
@@ -620,6 +654,29 @@ Item {
               visible: root.page === "status"
               anchors.fill: parent
               spacing: root.sp
+
+              // Last error banner (e.g. Clear failed) — visible, dismissable
+              Rectangle {
+                visible: root.lastError !== ""
+                width: parent.width
+                height: errInner.implicitHeight + Style.space(18)
+                radius: root.r
+                color: Util.alpha(root.urgent, 0.06)
+                border.width: Math.max(1, Style.space(1))
+                border.color: Util.alpha(root.urgent, 0.28)
+                clip: true
+                Rectangle { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: Style.space(3); color: root.urgent }
+                Row {
+                  id: errInner
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.left: parent.left; anchors.leftMargin: Style.space(14)
+                  anchors.right: parent.right; anchors.rightMargin: Style.space(12)
+                  spacing: Style.space(10)
+                  Text { width: parent.width - Style.space(28); text: root.lastError; color: root.urgent; font.family: root.ff; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; lineHeight: 1.35 }
+                  Text { text: "✕"; color: Util.alpha(root.urgent, 0.7); font.pixelSize: Style.font.body; anchors.verticalCenter: parent.verticalCenter }
+                }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.lastError = "" }
+              }
 
               // --- Not installed ---
               Column {

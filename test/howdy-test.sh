@@ -146,5 +146,14 @@ HOME=/root FACE_HOWDY_SHELL_JSON="$HOME_W/.config/omarchy/shell.json" \
   "$PLUGIN_DIR/bin/omarchy-howdy-restore-lock" >/dev/null 2>&1
 pass "deploy/restore honor FACE_HOWDY_* overrides with HOME=/root"
 
+# 11. Clear is idempotent and surfaces errors visibly (regression for exit-1 No models).
+grep -q 'clearProc' "$PLUGIN_DIR/Service.qml" || fail "Service.qml missing clearProc for Clear faces"
+grep -q 'No face models found' "$PLUGIN_DIR/Service.qml" || fail "Clear should treat 'No face models found' as already-clear success"
+grep -q 'lastError' "$PLUGIN_DIR/Service.qml" || fail "Service.qml should expose lastError for visible errors"
+grep -q 'howdy.*clear.*-y' "$PLUGIN_DIR/Service.qml" || fail "Clear should run howdy clear -y via pkexec"
+# Must not still use stale setupProc/runUserCmd sudo-in-pkexec path for clear
+if grep -q 'runUserCmd.*howdy clear' "$PLUGIN_DIR/Service.qml"; then fail "Clear still uses stale runUserCmd/sudo path"; fi
+pass "Clear is idempotent (No models -> success) and errors visible via lastError"
+
 echo
 echo "All face.howdy tests passed."
