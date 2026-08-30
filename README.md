@@ -75,6 +75,35 @@ is uncalibrated the status screen shows "IR calibrated: Not set" with this
 instruction, and `sudo linux-enable-ir-emitter run` is still triggered on
 every Howdy auth as a fallback.
 
+## Dependencies
+
+### Installed by the wizard
+| Package | Source | What it provides |
+|---|---|---|
+| `howdy-next-git` | AUR | `pam_howdy.so`, `howdy` CLI, ONNX face models (yunet + sface) |
+| `linux-enable-ir-emitter-git` | AUR | IR illuminator control (`linux-enable-ir-emitter`) |
+| `v4l-utils` | official | `v4l2-ctl` — IR camera detection (auto-installed first) |
+
+Transitive deps of `howdy-next-git` (handled automatically by pacman): `opencv>=5.0.0`, `qt6-base` (Preview window), `pam`, `libinih`, `yyjson`, `libevdev`, `openssl`, `acl`, `curl`. The ONNX models are fetched by `howdy download-models` at first run — an internet connection is needed once unless models are already present.
+
+### Platform (Omarchy)
+- **Quickshell overlay** (`Quickshell`, `Quickshell.Io`, `QtQuick`, `qs.Commons`, `qs.Ui`) + the `omarchy-shell` lifecycle contract (`toggle`/`close`, `omarchyPath` injection)
+- Stock **`omarchy.lock`** plugin at `/usr/share/omarchy/shell/plugins/lock/Service.qml` — cloned and patched at deploy time
+- **pkexec + a polkit agent** — every privileged step runs through this
+- **`omarchy-pkg-add` / `omarchy-pkg-drop`** and **`omarchy-launch-terminal`** — AUR helper proxy + terminal fallback
+- **Hyprland** (`hyprctl`) — for the lid-switch and SUPER+H binds applied at deploy
+- **SDDM** — optional; PAM is injected only when `/etc/pam.d/sddm` exists
+- **`python3`**, **`patch`**, **`sed`**/**`grep`**/**`awk`** — base tools used by the plugin scripts
+
+### You must have on hand
+- An **IR-capable camera** exposing a GREY-format v4l device (typical ThinkPad/Lenovo IR webcam) — detected automatically
+- An **AUR helper** (`yay`, `paru`, or `omarchy-pkg-aur-add`) for the first install — the wizard hands you the exact command and opens a terminal; yay needs a TTY for sudo so it can't run headless under pkexec
+- **One-time manual IR calibration** in a terminal:
+  ```sh
+  sudo linux-enable-ir-emitter configure
+  ```
+  The wizard's IR step writes the udev rule and systemd services; if the emitter is uncalibrated the status screen shows "IR calibrated: Not set" with this instruction, and `sudo linux-enable-ir-emitter run` is still triggered on every Howdy auth as a fallback.
+
 ## Installation
 
 ```sh
@@ -105,7 +134,7 @@ The wizard shows your current status and offers:
 
 After install and lock deploy, the shell restarts automatically. There is no
 separate enrollment step to run by hand — use **Face data → Add face** from the
-wizard (Howdy's own terminal UI opens).
+wizard (face unlock opens in-window, no terminal needed).
 
 ## A note on security
 
