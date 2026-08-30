@@ -587,14 +587,14 @@ Item {
               height: Style.space(24)
               radius: height / 2
               color: {
-                if (root.fullyActive())    return Util.alpha(root.accent, 0.12)
-                if (root.needsAttention()) return Util.alpha(root.warn, 0.12)
+                if (root.statusLoaded && root.fullyActive())    return Util.alpha(root.accent, 0.12)
+                if (root.statusLoaded && root.needsAttention()) return Util.alpha(root.warn, 0.12)
                 return Util.alpha(root.muted, 0.07)
               }
               border.width: Math.max(1, Style.space(1))
               border.color: {
-                if (root.fullyActive())    return Util.alpha(root.accent, 0.35)
-                if (root.needsAttention()) return Util.alpha(root.warn, 0.35)
+                if (root.statusLoaded && root.fullyActive())    return Util.alpha(root.accent, 0.35)
+                if (root.statusLoaded && root.needsAttention()) return Util.alpha(root.warn, 0.35)
                 return Util.alpha(root.muted, 0.18)
               }
               Behavior on color        { ColorAnimation { duration: 250 } }
@@ -611,8 +611,8 @@ Item {
                   radius: width / 2
                   anchors.verticalCenter: parent.verticalCenter
                   color: {
-                    if (root.fullyActive())    return root.accent
-                    if (root.needsAttention()) return root.warn
+                    if (root.statusLoaded && root.fullyActive())    return root.accent
+                    if (root.statusLoaded && root.needsAttention()) return root.warn
                     return root.muted
                   }
                   Behavior on color { ColorAnimation { duration: 250 } }
@@ -627,10 +627,12 @@ Item {
                 }
 
                 Text {
-                  text: root.fullyActive() ? "Active" : (root.needsAttention() ? "Almost there" : "Not set up")
+                  text: root.statusLoaded
+                    ? (root.fullyActive() ? "Active" : (root.needsAttention() ? "Almost there" : "Not set up"))
+                    : ""
                   color: {
-                    if (root.fullyActive())    return root.accent
-                    if (root.needsAttention()) return root.warn
+                    if (root.statusLoaded && root.fullyActive())    return root.accent
+                    if (root.statusLoaded && root.needsAttention()) return root.warn
                     return root.muted
                   }
                   font.family: root.ff; font.pixelSize: Style.font.caption - 1; font.bold: true
@@ -813,7 +815,7 @@ Item {
                     }
                     Text {
                       width: parent.width
-                      text: root.blockingStep()
+                      text: root.statusLoaded ? root.blockingStep() : ""
                       color: root.muted; font.family: root.ff; font.pixelSize: Style.font.caption
                       wrapMode: Text.WordWrap; lineHeight: 1.4
                     }
@@ -839,7 +841,9 @@ Item {
                 // dead-end after manual pkg install or interrupted install.
                 Button {
                   width: parent.width
-                  text: (!root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models)) ? "Finish setup" : "Enroll face"
+                  text: root.statusLoaded
+                    ? ((!root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models)) ? "Finish setup" : "Enroll face")
+                    : ""
                   selected: true; fontFamily: root.ff
                   onClicked: {
                     if (!root.pamDeployed() || !root.yes(root.status.ir_udev) || !root.yes(root.status.ir_config) || !root.yes(root.status.models))
@@ -1465,7 +1469,7 @@ visible: root.installing && !root.packagesNeedsTerminal
             }
             Button {
               id: removeBtn; text: "Remove"; bordered: true; foreground: root.urgent; fontFamily: root.ff
-              visible: root.page === "status" && (root.installed() || root.pamDeployed()) && !root.installing
+              visible: root.page === "status" && root.statusLoaded && (root.installed() || root.pamDeployed()) && !root.installing
               onClicked: root.page = "remove"
             }
 
@@ -1480,7 +1484,7 @@ visible: root.installing && !root.packagesNeedsTerminal
 
             Button {
               id: faceDataBtn; text: "Face data"; bordered: true; fontFamily: root.ff
-              visible: root.page === "status" && root.installed() && !root.installing
+              visible: root.page === "status" && root.statusLoaded && root.installed() && !root.installing
               onClicked: root.page = "facelist"
             }
             Button {

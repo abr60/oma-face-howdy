@@ -184,5 +184,17 @@ for gone in '← Back' 'or manage face data →' 'Status details →' 'deployBtn
 done
 pass "UI design-review pass applied (arm-to-confirm clear, slim footer, no stale UI)"
 
+# 14. Status-derived bindings must depend on statusLoaded (regression: pill/CTA/
+#     banner/footer froze at 'Not set up' because root.status is a var that is
+#     reassigned to an empty object mid-parse, then filled by silent mutation).
+q="$PLUGIN_DIR/Service.qml"
+grep -q 'text: root.statusLoaded' "$q" || fail "pill text must gate on statusLoaded (freeze fix)"
+grep -q 'root.statusLoaded && root.fullyActive())    return Util.alpha(root.accent, 0.12)' "$q" || fail "pill bg color must gate on statusLoaded"
+grep -q 'root.statusLoaded ? root.blockingStep() : ""' "$q" || fail "attention banner text must gate on statusLoaded"
+grep -q 'root.statusLoaded && (root.installed() || root.pamDeployed())' "$q" || fail "footer Remove btn must gate on statusLoaded"
+grep -q 'root.statusLoaded && root.installed() && !root.installing' "$q" || fail "footer Face data btn must gate on statusLoaded"
+if grep -q 'page === "status" && root.installed()' "$q"; then fail "bare status binding without statusLoaded found"; fi
+pass "status-derived bindings depend on statusLoaded (no freeze at empty status)"
+
 echo
 echo "All face.howdy tests passed."
