@@ -67,6 +67,16 @@ if [[ "$MODE" == "delete-pkgs" ]]; then
   fi
   pacman -Rns --noconfirm howdy-next-git linux-enable-ir-emitter-git 2>/dev/null || true
   msg "Removed howdy packages."
+
+  # Purge yay build cache + pacman package cache so a clean reinstall
+  # picks up fresh PKGBUILDs and is not confused by stale artifacts.
+  for cache in howdy-next-git linux-enable-ir-emitter-git; do
+    while IFS= read -r -d '' d; do
+      rm -rf "$d"
+    done < <(find /home -maxdepth 5 -type d -name "$cache" -path "*cache/yay*" -print0 2>/dev/null)
+  done
+  rm -f /var/cache/pacman/pkg/howdy-next-git*.pkg.tar.zst /var/cache/pacman/pkg/linux-enable-ir-emitter-git*.pkg.tar.zst 2>/dev/null || true
+  msg "Purged yay build cache and pacman package cache for howdy packages."
 else
   msg "Kept howdy packages + models (re-enable reuses them instantly)."
 fi

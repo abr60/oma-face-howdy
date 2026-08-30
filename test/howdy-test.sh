@@ -155,5 +155,16 @@ grep -q 'howdy.*clear.*-y' "$PLUGIN_DIR/Service.qml" || fail "Clear should run h
 if grep -q 'runUserCmd.*howdy clear' "$PLUGIN_DIR/Service.qml"; then fail "Clear still uses stale runUserCmd/sudo path"; fi
 pass "Clear is idempotent (No models -> success) and errors visible via lastError"
 
+# 12. Teardown delete-pkgs purges yay build cache + pacman cache (no leftover for troubleshooting).
+grep -q 'delete-pkgs' "$PLUGIN_DIR/bin/omarchy-howdy-teardown-system" || fail "teardown must support delete-pkgs mode"
+grep -q 'cache/yay' "$PLUGIN_DIR/bin/omarchy-howdy-teardown-system" || fail "teardown must purge yay build cache"
+grep -q '/var/cache/pacman/pkg/' "$PLUGIN_DIR/bin/omarchy-howdy-teardown-system" || fail "teardown must purge pacman package cache"
+grep -q 'Purged yay build cache' "$PLUGIN_DIR/bin/omarchy-howdy-teardown-system" || fail "teardown must confirm cache purge"
+# Must not leave stale find /home pattern that accidentally matches unrelated dirs
+if grep -q 'find /home' "$PLUGIN_DIR/bin/omarchy-howdy-teardown-system"; then
+  grep -q 'maxdepth 5' "$PLUGIN_DIR/bin/omarchy-howdy-teardown-system" || fail "teardown find must be bounded by maxdepth"
+fi
+pass "teardown delete-pkgs purges yay + pacman cache with no leftovers"
+
 echo
 echo "All face.howdy tests passed."
